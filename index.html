@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIM PKL - SMK Negeri 1 Gombong</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-slate-100">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-4 shadow-lg shadow-indigo-200">
+                    <i data-lucide="graduation-cap" class="w-8 h-8"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-900">SIM PKL</h1>
+                <p class="text-sm text-slate-500 mt-1">SMK Negeri 1 Gombong</p>
+            </div>
+
+            <div id="login-error" class="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl hidden"></div>
+
+            <form onsubmit="window.app.auth.login(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Email Akun</label>
+                    <input type="email" id="login-email" required placeholder="email@smkn1gombong.sch.id" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Password</label>
+                    <input type="password" id="login-password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-200 transition duration-200">
+                    Masuk Aplikasi
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP WRAPPER -->
+    <div id="app-wrapper" class="flex h-screen overflow-hidden hidden">
+        <!-- SIDEBAR -->
+        <aside class="w-64 bg-indigo-900 text-indigo-100 flex flex-col shadow-xl z-20">
+            <div class="p-6 flex items-center gap-3 border-b border-indigo-800">
+                <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
+                    <i data-lucide="graduation-cap" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h2 class="font-bold text-white text-base">SIM PKL</h2>
+                    <p class="text-xs text-indigo-300">SMKN 1 Gombong</p>
+                </div>
+            </div>
+
+            <nav id="sidebar-menu" class="flex-1 overflow-y-auto p-4 space-y-1 text-sm">
+                <!-- Injected dynamically -->
+            </nav>
+
+            <div class="p-4 border-t border-indigo-800">
+                <button onclick="window.app.auth.logout()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-800/50 hover:bg-rose-600 text-indigo-200 hover:text-white transition duration-200 text-sm font-medium">
+                    <i data-lucide="log-out" class="w-5 h-5"></i> Keluar Sistem
+                </button>
+            </div>
+        </aside>
+
+        <!-- CONTENT AREA -->
+        <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <header class="h-20 bg-white border-b border-slate-200 px-8 flex items-center justify-between z-10">
+                <div class="flex items-center gap-4">
+                    <h1 id="page-title" class="text-xl font-bold text-slate-800">Dashboard</h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <p id="user-display-name" class="font-semibold text-slate-800 text-sm">Administrator</p>
+                        <p id="user-display-role" class="text-xs text-indigo-600 font-medium">Super Admin</p>
+                    </div>
+                    <div class="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold" id="user-avatar">
+                        A
+                    </div>
+                </div>
+            </header>
+
+            <main id="main-content" class="flex-1 overflow-y-auto p-8 bg-slate-50">
+                <!-- Dynamic Content Views -->
+            </main>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 px-5 py-3 rounded-xl shadow-xl text-white font-medium text-sm flex items-center gap-3">
+        <span id="toast-msg">Notifikasi</span>
+    </div>
+
+    <!-- MODALS CONTAINER -->
+    <div id="modals-container"></div>
+
+    <script>
+        const SUPABASE_URL = "https://ttxkwperndmpxfvhlnoe.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_QG42NumYrIexUqfIHsTIwg_WSHqb5xD";
+        let sbClient = null;
+        try {
+            sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch(e) {
+            console.error("Gagal inisialisasi Supabase:", e);
+        }
+
+        /* ================= KONSTANTA IZIN ================= */
+        const ROLE_LABEL = {
+            superadmin: 'Super Admin',
+            pokja: 'Pokja PKL',
+            guru: 'Guru Pembimbing',
+            pembimbing_lapangan: 'Pembimbing Lapangan',
+            siswa: 'Siswa'
+        };
+
+        // Lapisan 1: halaman yang boleh dibuka per role
+        const ROLE_VIEWS = {
+            superadmin: ['dashboard','tapel','industri','guru','siswa','penempatan','surat','presensi','jurnal','visitasi','penilaian'],
+            pokja: ['dashboard','industri','guru','siswa','penempatan','surat','presensi','jurnal','visitasi','penilaian'],
+            guru: ['dashboard','presensi','jurnal','visitasi'],
+            pembimbing_lapangan: ['dashboard','presensi','jurnal','penilaian'],
+            siswa: ['dashboard','presensi-siswa','jurnal-siswa']
+        };
+
+        // Lapisan 2: tabel yang boleh diubah/dihapus per role. RLS tetap penentu akhir.
+        const PERM = {
+            edit: {
+                tahun_pelajaran: ['superadmin'],
+                industri: ['superadmin','pokja'],
+                guru: ['superadmin','pokja'],
+                siswa: ['superadmin','pokja'],
+                penempatan: ['superadmin','pokja'],
+                visitasi: ['superadmin'],
+                penilaian: ['superadmin']
+            },
+            del: {
+                tahun_pelajaran: ['superadmin'],
+                industri: ['superadmin'],
+                guru: ['superadmin'],
+                siswa: ['superadmin','pokja'],
+                penempatan: ['superadmin','pokja'],
+                visitasi: ['superadmin'],
+                penilaian: ['superadmin']
+            }
+        };
+
+        const MENU = [
+            { id:'dashboard', label:'Dashboard', icon:'layout-dashboard', group:null },
+            { id:'tapel', label:'Tahun Pelajaran', icon:'calendar', group:'Data Master' },
+            { id:'industri', label:'Data Industri', icon:'building-2', group:'Data Master' },
+            { id:'guru', label:'Data Guru', icon:'users', group:'Data Master' },
+            { id:'siswa', label:'Data Siswa', icon:'graduation-cap', group:'Data Master' },
+            { id:'penempatan', label:'Penempatan PKL', icon:'map-pin', group:'Data Master' },
+            { id:'surat', label:'Surat Pengantar', icon:'file-text', group:'Kegiatan PKL' },
+            { id:'presensi-siswa', label:'Presensi GPS', icon:'map-pin', group:'Kegiatan PKL' },
+            { id:'presensi', label:'Rekap Presensi', icon:'clock', group:'Kegiatan PKL' },
+            { id:'jurnal-siswa', label:'Jurnal Harian', icon:'book-open', group:'Kegiatan PKL' },
+            { id:'jurnal', label:'Jurnal Kegiatan', icon:'book-open', group:'Kegiatan PKL', alt:{ guru:'Verifikasi Jurnal' } },
+            { id:'visitasi', label:'Monitoring & Visitasi', icon:'eye', group:'Kegiatan PKL' },
+            { id:'penilaian', label:'Penilaian Industri', icon:'award', group:'Kegiatan PKL', alt:{ pembimbing_lapangan:'Nilai & Rekap Akhir' } }
+        ];
+
+        /* ================= HELPER UMUM ================= */
+        const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        // Aman untuk string di dalam onclick='...': buang apostrof dan backslash, lalu escape HTML
+        const jsq = (s) => esc(String(s ?? '').replace(/[\\']/g, ''));
+
+        const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : '-';
+
+        function friendlyError(err) {
+            const code = err && err.code;
+            const msg = (err && err.message) || String(err);
+            if(code === '23503') return 'Data masih dipakai oleh data lain (misalnya penempatan). Nonaktifkan datanya, atau hapus keterkaitannya terlebih dahulu.';
+            if(code === '23505') return 'Data sudah ada (duplikat NIS, email, atau isian unik lainnya).';
+            if(code === '23P01') return 'Siswa sudah memiliki penempatan aktif pada periode yang bertabrakan.';
+            if(code === '23514') return 'Ada isian yang tidak memenuhi aturan data (periksa tanggal dan angka).';
+            if(code === '42501') return 'Anda tidak memiliki izin untuk tindakan ini.';
+            return msg;
+        }
+
+        // Menjalankan query Supabase dan SELALU memeriksa error
+        async function q(promise) {
+            const res = await promise;
+            if(res.error) throw new Error(friendlyError(res.error));
+            return res.data || [];
+        }
+
+        // Insert/update satu baris, gagal jika tidak ada baris yang tersimpan (misalnya ditolak RLS)
+        async function writeRow(table, id, payload) {
+            const t = sbClient.from(table);
+            const res = id ? await t.update(payload).eq('id', id).select('id') : await t.insert([payload]).select('id');
+            if(res.error) throw new Error(friendlyError(res.error));
+            if(!res.data || res.data.length === 0) throw new Error('Data tidak tersimpan (tidak ada izin atau data tidak ditemukan).');
+            return res.data[0];
+        }
+
+        async function callManageUsers(payload) {
+            if(!sbClient) throw new Error('Koneksi database tidak tersedia.');
+            const { data, error } = await sbClient.functions.invoke('manage-users', { body: payload });
+            if(error) {
+                let msg = error.message;
+                try { const j = await error.context.json(); if(j && j.error) msg = j.error; } catch(_) {}
+                throw new Error(msg);
+            }
+            if(data && data.error) throw new Error(data.error);
+            return data;
+        }
+
+        // Handler form generik: tombol dikunci selama proses, notifikasi sukses hanya jika benar-benar berhasil
+        async function submitForm(e, modalId, okMsg, reloadKey, fn) {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Menyimpan...';
+            try {
+                await fn();
+                window.app.ui.closeModal(modalId);
+                window.app.ui.showToast(okMsg);
+                if(reloadKey) window.app.list.reload(reloadKey);
+            } catch(err) {
+                window.app.ui.showToast('Gagal: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = label;
+            }
+        }
+
+        async function removeRow(table, id, reloadKey) {
+            if(!window.app.canDelete(table)) return window.app.ui.showToast('Anda tidak berwenang menghapus data ini.', 'error');
+            if(!confirm('Hapus data ini? Tindakan ini tidak dapat dibatalkan.')) return;
+            try {
+                if(!sbClient) throw new Error('Koneksi database tidak tersedia.');
+                const res = await sbClient.from(table).delete().eq('id', id).select('id');
+                if(res.error) throw new Error(friendlyError(res.error));
+                if(!res.data || res.data.length === 0) throw new Error('Tidak ada data yang terhapus (tidak ada izin atau data tidak ditemukan).');
+                window.app.ui.showToast('Berhasil dihapus!');
+                if(reloadKey) window.app.list.reload(reloadKey);
+                else if(table === 'visitasi') window.app.db.loadVisitasi();
+                else if(table === 'penilaian') window.app.db.loadPenilaian();
+            } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+        }
+
+        async function removeAccount(userId, nama, reloadKey) {
+            if(!confirm('Hapus akun dan data "' + nama + '"? Tindakan ini tidak dapat dibatalkan.')) return;
+            try {
+                await callManageUsers({ action: 'delete_user', user_id: userId });
+                window.app.ui.showToast('Akun dan data berhasil dihapus!');
+                if(reloadKey) window.app.list.reload(reloadKey);
+            } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+        }
+
+        async function resetPassword(userId, nama) {
+            const pw = prompt('Password baru untuk ' + nama + ' (minimal 8 karakter):');
+            if(pw === null) return;
+            if(pw.length < 8) return window.app.ui.showToast('Password minimal 8 karakter.', 'error');
+            try {
+                await callManageUsers({ action: 'reset_password', user_id: userId, password: pw });
+                window.app.ui.showToast('Password direset. Pengguna wajib menggantinya saat login.');
+            } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+        }
+
+        async function toggleAccount(userId, nama, aktifSekarang, reloadKey) {
+            const aksi = aktifSekarang ? 'menonaktifkan' : 'mengaktifkan';
+            if(!confirm('Yakin ingin ' + aksi + ' akun "' + nama + '"?')) return;
+            try {
+                await callManageUsers({ action: 'set_active', user_id: userId, aktif: !aktifSekarang });
+                window.app.ui.showToast('Status akun diperbarui.');
+                if(reloadKey) window.app.list.reload(reloadKey);
+            } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+        }
+
+        // Elemen UI kecil
+        const BTN_TONE = {
+            slate: 'bg-slate-100 text-slate-700', indigo: 'bg-indigo-50 text-indigo-700',
+            rose: 'bg-rose-50 text-rose-700', amber: 'bg-amber-50 text-amber-700', emerald: 'bg-emerald-50 text-emerald-700'
+        };
+        const B = (label, js, tone = 'slate') => `<button onclick="${js}" class="px-3 py-1 ${BTN_TONE[tone]} rounded-lg text-xs font-semibold">${label}</button>`;
+        const actions = (...btns) => `<div class="flex flex-wrap gap-1.5">${btns.filter(Boolean).join('')}</div>`;
+        const statusBadge = (aktif) => aktif === false
+            ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
+            : '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs">Aktif</span>';
+        const kompBadges = (kodes) => kodes.length
+            ? kodes.map(k => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs mr-1">${esc(k)}</span>`).join('')
+            : '<span class="text-xs text-slate-400">-</span>';
+
+        // Checkbox konsentrasi. Pokja hanya bisa mencentang konsentrasinya sendiri.
+        function renderKompChecks(containerId, selected = []) {
+            const app = window.app, isPokja = app.currentRole === 'pokja';
+            document.getElementById(containerId).innerHTML = app.kompetensi.map(k => {
+                const dis = isPokja && !app.currentKompetensi.includes(k.kode);
+                const chk = selected.includes(k.kode);
+                return `<label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-sm ${dis ? 'opacity-50' : ''}"><input type="checkbox" value="${esc(k.kode)}" ${chk ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(k.kode)}</label>`;
+            }).join('');
+        }
+        const readKompChecks = (containerId) => [...document.querySelectorAll('#' + containerId + ' input:checked')].map(i => i.value);
+
+        // Select konsentrasi tunggal (siswa), dibatasi untuk Pokja
+        function fillKompSelect(selectId, selectedKode) {
+            const app = window.app;
+            const opts = app.kompetensi.filter(k => app.currentRole !== 'pokja' || app.currentKompetensi.includes(k.kode));
+            document.getElementById(selectId).innerHTML = opts.map(k => `<option value="${esc(k.kode)}">${esc(k.kode)} - ${esc(k.nama)}</option>`).join('');
+            if(selectedKode && opts.some(k => k.kode === selectedKode)) document.getElementById(selectId).value = selectedKode;
+        }
+
+        const val = (id) => document.getElementById(id).value.trim();
+        const setVal = (id, v) => { document.getElementById(id).value = v ?? ''; };
+
+        /* ================= APLIKASI ================= */
+        window.app = {
+            currentUser: null,
+            currentRole: null,
+            currentKompetensi: [],
+            kompetensi: [],
+
+            can: function(view) {
+                return view === 'dashboard' || (ROLE_VIEWS[this.currentRole] || []).includes(view);
+            },
+            canEdit: function(table) { return (PERM.edit[table] || []).includes(this.currentRole); },
+            canDelete: function(table) { return (PERM.del[table] || []).includes(this.currentRole); },
+            // Superadmin boleh semua; Pokja hanya jika data terkait salah satu konsentrasinya
+            manageByKomp: function(kodes) {
+                if(this.currentRole === 'superadmin') return true;
+                if(this.currentRole !== 'pokja') return false;
+                return (kodes || []).some(k => this.currentKompetensi.includes(k));
+            },
+
+            init: async function() {
+                lucide.createIcons();
+                if(!sbClient) {
+                    const box = document.getElementById('login-error');
+                    box.textContent = 'Koneksi database Supabase tidak tersedia.';
+                    box.classList.remove('hidden');
+                    return;
+                }
+                try {
+                    const { data: { session } } = await sbClient.auth.getSession();
+                    if(session) {
+                        const ok = await this.auth.bootstrapSession();
+                        if(!ok) await sbClient.auth.signOut();
+                    }
+                } catch(e) { console.error(e); }
+
+                sbClient.auth.onAuthStateChange((event) => {
+                    if(event === 'SIGNED_OUT') location.reload();
+                });
+            },
+
+            auth: {
+                login: async function(e) {
+                    e.preventDefault();
+                    const email = document.getElementById('login-email').value.trim();
+                    const pass = document.getElementById('login-password').value;
+                    const errBox = document.getElementById('login-error');
+                    const btn = e.target.querySelector('button[type=submit]');
+                    errBox.classList.add('hidden');
+                    btn.disabled = true;
+                    btn.textContent = 'Memproses...';
+                    try {
+                        if(!sbClient) throw new Error('Koneksi database Supabase tidak tersedia.');
+                        const { error } = await sbClient.auth.signInWithPassword({ email, password: pass });
+                        if(error) throw new Error('Email atau password salah.');
+                        const ok = await window.app.auth.bootstrapSession();
+                        if(!ok) {
+                            await sbClient.auth.signOut();
+                            throw new Error('Akun Anda belum memiliki profil aktif. Hubungi admin sekolah.');
+                        }
+                    } catch(err) {
+                        errBox.textContent = err.message;
+                        errBox.classList.remove('hidden');
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = 'Masuk Aplikasi';
+                    }
+                },
+
+                // Role selalu dibaca dari tabel profiles berdasarkan akun Auth yang sedang login.
+                bootstrapSession: async function() {
+                    try {
+                        const { data: { user }, error: uErr } = await sbClient.auth.getUser();
+                        if(uErr || !user) return false;
+
+                        const { data: p, error } = await sbClient.from('profiles')
+                            .select('id, email, nama, role, aktif, must_change_password')
+                            .eq('id', user.id).maybeSingle();
+                        if(error || !p || !p.aktif) return false;
+
+                        let kompetensi = [];
+                        if(p.role === 'pokja') {
+                            const r = await sbClient.from('pokja_assignments')
+                                .select('kompetensi_keahlian(kode)').eq('profile_id', p.id);
+                            if(r.error) return false;
+                            kompetensi = (r.data || []).map(x => x.kompetensi_keahlian && x.kompetensi_keahlian.kode).filter(Boolean);
+                        }
+
+                        const app = window.app;
+                        app.kompetensi = await q(sbClient.from('kompetensi_keahlian').select('id, kode, nama').order('kode'));
+                        app.currentUser = { id: p.id, nama: p.nama, email: p.email, role: p.role };
+                        app.currentRole = p.role;
+                        app.currentKompetensi = kompetensi;
+
+                        document.getElementById('login-screen').classList.add('hidden');
+                        document.getElementById('app-wrapper').classList.remove('hidden');
+                        app.ui.renderSidebar();
+                        app.navigate('dashboard');
+                        if(p.must_change_password) app.auth.promptChangePassword();
+                        return true;
+                    } catch(e) {
+                        console.error(e);
+                        return false;
+                    }
+                },
+
+                logout: async function() {
+                    try { if(sbClient) await sbClient.auth.signOut(); } catch(e) {}
+                    location.reload();
+                },
+
+                promptChangePassword: function() {
+                    if(document.getElementById('modal-pw')) return;
+                    document.getElementById('modals-container').insertAdjacentHTML('beforeend', `
+                        <div id="modal-pw" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                                <h3 class="font-bold text-lg text-slate-900 mb-1">Ganti password</h3>
+                                <p class="text-sm text-slate-500 mb-4">Password awal dari admin harus diganti sebelum Anda melanjutkan.</p>
+                                <form onsubmit="window.app.auth.changePassword(event)" class="space-y-4">
+                                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">Password baru (minimal 8 karakter)</label><input type="password" id="pw-baru" minlength="8" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
+                                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">Ulangi password baru</label><input type="password" id="pw-ulang" minlength="8" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
+                                    <div class="flex justify-end"><button type="submit" class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm">Simpan password</button></div>
+                                </form>
+                            </div>
+                        </div>`);
+                },
+
+                changePassword: async function(e) {
+                    e.preventDefault();
+                    const p1 = document.getElementById('pw-baru').value;
+                    const p2 = document.getElementById('pw-ulang').value;
+                    if(p1.length < 8) return window.app.ui.showToast('Password minimal 8 karakter.', 'error');
+                    if(p1 !== p2) return window.app.ui.showToast('Kedua password tidak sama.', 'error');
+                    try {
+                        const r1 = await sbClient.auth.updateUser({ password: p1 });
+                        if(r1.error) throw r1.error;
+                        const r2 = await sbClient.from('profiles').update({ must_change_password: false }).eq('id', window.app.currentUser.id);
+                        if(r2.error) throw r2.error;
+                        document.getElementById('modal-pw').remove();
+                        window.app.ui.showToast('Password berhasil diganti.');
+                    } catch(err) {
+                        window.app.ui.showToast('Gagal mengganti password: ' + err.message, 'error');
+                    }
+                }
+            },
+
+            ui: {
+                showToast: function(msg, type = 'success') {
+                    const toast = document.getElementById('toast');
+                    const msgEl = document.getElementById('toast-msg');
+                    msgEl.textContent = msg;
+                    toast.className = `fixed bottom-6 right-6 z-50 transform translate-y-0 opacity-100 transition-all duration-300 px-5 py-3 rounded-xl shadow-xl text-white font-medium text-sm flex items-center gap-3 max-w-md ${type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'}`;
+                    setTimeout(() => {
+                        toast.className = 'fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 px-5 py-3 rounded-xl shadow-xl text-white font-medium text-sm flex items-center gap-3';
+                    }, 4500);
+                },
+                openModal: function(id) {
+                    document.getElementById(id).classList.remove('hidden');
+                    lucide.createIcons();
+                },
+                closeModal: function(id) {
+                    document.getElementById(id).classList.add('hidden');
+                },
+                renderSidebar: function() {
+                    const app = window.app;
+                    const role = app.currentRole;
+                    document.getElementById('user-display-name').textContent = app.currentUser.nama;
+                    document.getElementById('user-display-role').textContent = ROLE_LABEL[role] || role;
+                    document.getElementById('user-avatar').textContent = app.currentUser.nama.charAt(0).toUpperCase();
+
+                    const allowed = ROLE_VIEWS[role] || ['dashboard'];
+                    let html = '', lastGroup = null;
+                    MENU.filter(m => allowed.includes(m.id)).forEach(m => {
+                        if(m.group && m.group !== lastGroup) {
+                            html += `<div class="pt-4 pb-2 px-4 text-xs font-semibold uppercase tracking-wider text-indigo-400">${m.group}</div>`;
+                        }
+                        lastGroup = m.group;
+                        const label = (m.alt && m.alt[role]) || m.label;
+                        html += `<button onclick="window.app.navigate('${m.id}')" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-indigo-800 text-indigo-100 font-medium transition duration-200"><i data-lucide="${m.icon}" class="w-5 h-5"></i> ${label}</button>`;
+                    });
+                    document.getElementById('sidebar-menu').innerHTML = html;
+                    lucide.createIcons();
+                }
+            },
+
+            navigate: function(view) {
+                if(!this.currentRole) return;
+                if(!this.can(view)) {
+                    this.ui.showToast('Anda tidak memiliki akses ke halaman ini.', 'error');
+                    view = 'dashboard';
+                }
+                const titles = {
+                    'dashboard': 'Dashboard SIM PKL',
+                    'tapel': 'Tahun Pelajaran',
+                    'industri': 'Data Industri / Tempat PKL',
+                    'guru': 'Data Guru Pembimbing',
+                    'siswa': 'Data Siswa PKL',
+                    'penempatan': 'Penempatan & Plotting PKL',
+                    'surat': 'Surat Pengantar PKL',
+                    'presensi': 'Rekap Presensi Harian',
+                    'jurnal': 'Verifikasi Jurnal Kegiatan',
+                    'visitasi': 'Monitoring & Visitasi Industri',
+                    'penilaian': 'Penilaian Nilai PKL Industri',
+                    'presensi-siswa': 'Presensi Masuk & Pulang GPS',
+                    'jurnal-siswa': 'Input Jurnal Kegiatan Harian'
+                };
+                document.getElementById('page-title').textContent = titles[view] || 'SIM PKL';
+                const main = document.getElementById('main-content');
+
+                if(view === 'dashboard') this.views.renderDashboard(main);
+                else if(['tapel','industri','guru','siswa','penempatan','surat'].includes(view)) this.list.show(view, main);
+                else if(view === 'presensi') this.views.renderPresensi(main);
+                else if(view === 'jurnal') this.views.renderJurnal(main);
+                else if(view === 'visitasi') this.views.renderVisitasi(main);
+                else if(view === 'penilaian') this.views.renderPenilaian(main);
+                else if(view === 'presensi-siswa') this.views.renderPresensiSiswa(main);
+                else if(view === 'jurnal-siswa') this.views.renderJurnalSiswa(main);
+
+                lucide.createIcons();
+            },
+
+            formatWA: function(hp) {
+                if(!hp) return '-';
+                let clean = String(hp).replace(/\D/g,'');
+                if(clean.startsWith('0')) clean = '62' + clean.slice(1);
+                return `<a href="https://wa.me/${clean}" target="_blank" rel="noopener" class="text-emerald-600 hover:underline flex items-center gap-1 font-medium"><i data-lucide="message-circle" class="w-4 h-4"></i>${esc(hp)}</a>`;
+            },
+
+            /* ---------- Mesin tabel generik: pencarian, filter, loading, error ---------- */
+            list: {
+                rows: {},
+                find: function(key, id) { return (this.rows[key] || []).find(r => r.id === id); },
+
+                show: function(key, container) {
+                    const m = window.app.mod[key];
+                    const filterHtml = m.filter
+                        ? `<select id="filter-${key}" onchange="window.app.list.apply('${key}')" class="px-3 py-2.5 rounded-xl border border-slate-200 text-sm"><option value="">${esc(m.filter.label)}</option>${m.filter.options().map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`
+                        : '';
+                    const addHtml = m.addLabel && m.canAdd()
+                        ? `<button onclick="window.app.mod.${key}.openForm()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> ${esc(m.addLabel)}</button>`
+                        : '';
+                    container.innerHTML = `
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100 flex flex-wrap gap-3 justify-between items-center">
+                                <h3 class="font-bold text-slate-900">${esc(m.title)}</h3>
+                                <div class="flex flex-wrap gap-3 items-center">
+                                    <input id="search-${key}" oninput="window.app.list.apply('${key}')" type="search" placeholder="Cari..." class="px-4 py-2.5 rounded-xl border border-slate-200 text-sm w-48">
+                                    ${filterHtml}${addHtml}
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">${m.headers.map(h => `<th class="p-4">${esc(h)}</th>`).join('')}</tr></thead>
+                                    <tbody id="tbody-${key}"></tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                    this.reload(key);
+                },
+
+                reload: async function(key) {
+                    const m = window.app.mod[key];
+                    const tbody = document.getElementById('tbody-' + key);
+                    if(!tbody) return;
+                    const cols = m.headers.length;
+                    tbody.innerHTML = `<tr><td colspan="${cols}" class="p-6 text-center text-slate-400">Memuat data...</td></tr>`;
+                    try {
+                        this.rows[key] = await m.load();
+                        this.apply(key);
+                    } catch(err) {
+                        tbody.innerHTML = `<tr><td colspan="${cols}" class="p-6 text-center text-rose-600">Gagal memuat data: ${esc(err.message)} <button onclick="window.app.list.reload('${key}')" class="underline ml-2">Coba lagi</button></td></tr>`;
+                    }
+                },
+
+                apply: function(key) {
+                    const m = window.app.mod[key];
+                    const tbody = document.getElementById('tbody-' + key);
+                    if(!tbody) return;
+                    const sEl = document.getElementById('search-' + key), fEl = document.getElementById('filter-' + key);
+                    const s = sEl ? sEl.value.toLowerCase().trim() : '';
+                    const f = fEl ? fEl.value : '';
+                    const all = this.rows[key] || [];
+                    const rows = all.filter(d => (!s || m.text(d).toLowerCase().includes(s)) && (!f || m.filter.match(d, f)));
+                    tbody.innerHTML = rows.length
+                        ? rows.map(d => m.row(d)).join('')
+                        : `<tr><td colspan="${m.headers.length}" class="p-6 text-center text-slate-400">${all.length ? 'Tidak ada data yang cocok.' : 'Belum ada data.'}</td></tr>`;
+                    lucide.createIcons();
+                }
+            },
+
+            /* ---------- Modul data master ---------- */
+            mod: {
+                /* ===== Tahun Pelajaran ===== */
+                tapel: {
+                    title: 'Daftar Tahun Pelajaran', addLabel: 'Tambah Tapel',
+                    canAdd: () => window.app.canEdit('tahun_pelajaran'),
+                    headers: ['Nama Tahun Pelajaran','Mulai','Selesai','Status','Aksi'],
+                    filter: { label: 'Semua status', options: () => ['Aktif','Nonaktif'], match: (d, v) => d.status === v },
+                    load: () => q(sbClient.from('tahun_pelajaran').select('*').order('tgl_mulai', { ascending: false })),
+                    text: d => d.nama,
+                    row: function(d) {
+                        const app = window.app;
+                        return `<tr class="border-b border-slate-100"><td class="p-4 font-semibold">${esc(d.nama)}</td><td class="p-4">${fmtDate(d.tgl_mulai)}</td><td class="p-4">${fmtDate(d.tgl_selesai)}</td><td class="p-4">${statusBadge(d.status === 'Aktif')}</td><td class="p-4">${actions(
+                            app.canEdit('tahun_pelajaran') && B('Ubah', `window.app.mod.tapel.openForm('${d.id}')`, 'indigo'),
+                            app.canDelete('tahun_pelajaran') && B('Hapus', `removeRow('tahun_pelajaran','${d.id}','tapel')`, 'rose'))}</td></tr>`;
+                    },
+                    openForm: function(id) {
+                        const d = id ? window.app.list.find('tapel', id) : null;
+                        setVal('tapel-id', d ? d.id : '');
+                        document.getElementById('tapel-title').textContent = d ? 'Ubah Tahun Pelajaran' : 'Tambah Tahun Pelajaran';
+                        setVal('tapel-nama', d ? d.nama : '');
+                        setVal('tapel-mulai', d ? d.tgl_mulai : '');
+                        setVal('tapel-selesai', d ? d.tgl_selesai : '');
+                        setVal('tapel-status', d ? d.status : 'Aktif');
+                        window.app.ui.openModal('modal-tapel-container');
+                    },
+                    save: function(e) {
+                        return submitForm(e, 'modal-tapel-container', 'Tahun pelajaran berhasil disimpan!', 'tapel', async () => {
+                            const payload = { nama: val('tapel-nama'), tgl_mulai: val('tapel-mulai'), tgl_selesai: val('tapel-selesai'), status: val('tapel-status') };
+                            if(!payload.nama) throw new Error('Nama tahun pelajaran wajib diisi.');
+                            if(payload.tgl_selesai < payload.tgl_mulai) throw new Error('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+                            await writeRow('tahun_pelajaran', val('tapel-id'), payload);
+                        });
+                    }
+                },
+
+                /* ===== Industri ===== */
+                industri: {
+                    title: 'Data Industri / Tempat PKL', addLabel: 'Tambah Industri',
+                    canAdd: () => window.app.canEdit('industri'),
+                    headers: ['Nama Industri','Konsentrasi','Pembimbing Lapangan','Koordinat / Radius','Status','Aksi'],
+                    filter: { label: 'Semua konsentrasi', options: () => window.app.kompetensi.map(k => k.kode), match: (d, v) => d._kodes.includes(v) },
+                    load: async function() {
+                        const rows = await q(sbClient.from('industri')
+                            .select('*, industri_kompetensi(kompetensi_keahlian(kode)), pembimbing_lapangan(id, user_id, nama, hp, email, aktif)')
+                            .order('nama'));
+                        return rows.map(d => ({
+                            ...d,
+                            _kodes: (d.industri_kompetensi || []).map(x => x.kompetensi_keahlian && x.kompetensi_keahlian.kode).filter(Boolean).sort(),
+                            _pl: Array.isArray(d.pembimbing_lapangan) ? d.pembimbing_lapangan[0] : d.pembimbing_lapangan
+                        }));
+                    },
+                    text: d => [d.nama, d.kota, d.bidang, d._pl && d._pl.nama].join(' '),
+                    row: function(d) {
+                        const app = window.app, manage = app.manageByKomp(d._kodes), pl = d._pl;
+                        const plHtml = pl
+                            ? `<strong>${esc(pl.nama)}</strong> ${statusBadge(pl.aktif)}<br>${app.formatWA(pl.hp)}<span class="text-xs text-slate-500">${esc(pl.email || '')}</span>`
+                            : '<span class="text-xs text-amber-600">Belum ada akun</span>';
+                        const koordinat = (d.lat !== null && d.lng !== null) ? `${esc(d.lat)}, ${esc(d.lng)}<br>Radius ${esc(d.radius || 100)} m` : '<span class="text-amber-600">Belum diisi</span>';
+                        return `<tr class="border-b border-slate-100">
+                            <td class="p-4"><strong>${esc(d.nama)}</strong><br><span class="text-xs text-slate-500">${esc(d.bidang || '-')} · ${esc(d.kota || '-')}</span>${d.pembimbing ? `<br><span class="text-xs text-slate-400">Kontak: ${esc(d.pembimbing)}</span>` : ''}</td>
+                            <td class="p-4">${kompBadges(d._kodes)}</td>
+                            <td class="p-4">${plHtml}</td>
+                            <td class="p-4 text-xs">${koordinat}</td>
+                            <td class="p-4">${statusBadge(d.aktif)}</td>
+                            <td class="p-4">${actions(
+                                manage && B('Ubah', `window.app.mod.industri.openForm('${d.id}')`, 'indigo'),
+                                manage && !pl && B('Buat Akun PL', `window.app.mod.industri.openPL('${d.id}')`, 'emerald'),
+                                manage && pl && pl.user_id && B('Reset PW PL', `resetPassword('${pl.user_id}', '${jsq(pl.nama)}')`, 'amber'),
+                                manage && B(d.aktif ? 'Nonaktifkan' : 'Aktifkan', `window.app.mod.industri.toggle('${d.id}')`, 'slate'),
+                                app.canDelete('industri') && B('Hapus', `removeRow('industri','${d.id}','industri')`, 'rose'))}</td></tr>`;
+                    },
+                    openForm: function(id) {
+                        const app = window.app, d = id ? app.list.find('industri', id) : null;
+                        setVal('ind-id', d ? d.id : '');
+                        document.getElementById('ind-title').textContent = d ? 'Ubah Data Industri' : 'Tambah Data Industri';
+                        setVal('ind-nama', d ? d.nama : '');
+                        setVal('ind-bidang', d ? d.bidang : '');
+                        setVal('ind-kota', d ? d.kota : '');
+                        setVal('ind-pembimbing', d ? d.pembimbing : '');
+                        setVal('ind-alamat', d ? d.alamat : '');
+                        setVal('ind-hp', d ? d.hp : '');
+                        setVal('ind-lat', d && d.lat !== null ? d.lat : '');
+                        setVal('ind-lng', d && d.lng !== null ? d.lng : '');
+                        setVal('ind-radius', d && d.radius ? d.radius : 100);
+                        renderKompChecks('ind-komp', d ? d._kodes : (app.currentRole === 'pokja' ? app.currentKompetensi : []));
+                        app.ui.openModal('modal-industri-container');
+                    },
+                    save: function(e) {
+                        return submitForm(e, 'modal-industri-container', 'Industri berhasil disimpan!', 'industri', async () => {
+                            const id = val('ind-id'), kodes = readKompChecks('ind-komp');
+                            const lat = val('ind-lat'), lng = val('ind-lng'), radius = parseInt(val('ind-radius'), 10);
+                            if(!val('ind-nama')) throw new Error('Nama industri wajib diisi.');
+                            if(!val('ind-kota')) throw new Error('Kota/Kabupaten wajib diisi.');
+                            if((lat === '') !== (lng === '')) throw new Error('Isi latitude dan longitude bersamaan, atau kosongkan keduanya.');
+                            if(lat !== '' && (Math.abs(parseFloat(lat)) > 90 || Math.abs(parseFloat(lng)) > 180)) throw new Error('Koordinat tidak valid.');
+                            if(!(radius >= 10 && radius <= 5000)) throw new Error('Radius harus antara 10 dan 5000 meter.');
+                            if(!kodes.length && (!id || window.app.currentRole === 'superadmin')) throw new Error('Pilih minimal satu konsentrasi keahlian.');
+                            const { error } = await sbClient.rpc('simpan_industri', {
+                                p_id: id || null,
+                                p_data: { nama: val('ind-nama'), bidang: val('ind-bidang'), kota: val('ind-kota'), pembimbing: val('ind-pembimbing'), alamat: val('ind-alamat'), hp: val('ind-hp'), lat: lat, lng: lng, radius: radius },
+                                p_kompetensi: kodes
+                            });
+                            if(error) throw new Error(friendlyError(error));
+                        });
+                    },
+                    toggle: async function(id) {
+                        const d = window.app.list.find('industri', id);
+                        if(!d) return;
+                        if(!confirm('Yakin ingin ' + (d.aktif ? 'menonaktifkan' : 'mengaktifkan') + ' industri "' + d.nama + '"?')) return;
+                        try {
+                            await writeRow('industri', id, { aktif: !d.aktif });
+                            window.app.ui.showToast('Status industri diperbarui.');
+                            window.app.list.reload('industri');
+                        } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                    },
+                    openPL: function(id) {
+                        const d = window.app.list.find('industri', id);
+                        if(!d) return;
+                        setVal('pl-industri-id', d.id);
+                        document.getElementById('pl-industri-nama').textContent = d.nama;
+                        ['pl-nama','pl-email','pl-password','pl-hp','pl-jabatan'].forEach(x => setVal(x, ''));
+                        window.app.ui.openModal('modal-pl-container');
+                    },
+                    savePL: function(e) {
+                        return submitForm(e, 'modal-pl-container', 'Akun Pembimbing Lapangan berhasil dibuat!', 'industri', async () => {
+                            await callManageUsers({
+                                action: 'create_user', role: 'pembimbing_lapangan',
+                                industri_id: val('pl-industri-id'),
+                                nama: val('pl-nama'), email: val('pl-email'), password: document.getElementById('pl-password').value,
+                                pembimbing: { jabatan: val('pl-jabatan'), hp: val('pl-hp') }
+                            });
+                        });
+                    }
+                },
+
+                /* ===== Guru (bisa membimbing/mengampu lintas konsentrasi) ===== */
+                guru: {
+                    title: 'Data Guru Pembimbing', addLabel: 'Tambah Guru',
+                    canAdd: () => window.app.canEdit('guru'),
+                    headers: ['NIP / NIK','Nama & Peran','Konsentrasi','Kontak HP & Email','Status','Aksi'],
+                    filter: { label: 'Semua konsentrasi', options: () => window.app.kompetensi.map(k => k.kode), match: (d, v) => d._kodes.includes(v) },
+                    load: async function() {
+                        const rows = await q(sbClient.from('guru')
+                            .select('id, user_id, nip, nama, jabatan, hp, email, aktif, guru_kompetensi(kompetensi_keahlian(kode))')
+                            .order('nama'));
+                        const roles = {};
+                        if(window.app.currentRole === 'superadmin') {
+                            const pr = await q(sbClient.from('profiles').select('id, role').in('role', ['guru','pokja']));
+                            pr.forEach(p => { roles[p.id] = p.role; });
+                        }
+                        return rows.map(d => ({
+                            ...d,
+                            _kodes: (d.guru_kompetensi || []).map(x => x.kompetensi_keahlian && x.kompetensi_keahlian.kode).filter(Boolean).sort(),
+                            _role: roles[d.user_id] || null
+                        }));
+                    },
+                    text: d => [d.nama, d.nip, d.email].join(' '),
+                    row: function(d) {
+                        const app = window.app, manage = app.manageByKomp(d._kodes);
+                        const peran = d._role === 'pokja' ? '<span class="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs">Pokja PKL</span>' : '';
+                        const nm = jsq(d.nama);
+                        return `<tr class="border-b border-slate-100">
+                            <td class="p-4">${esc(d.nip || '-')}</td>
+                            <td class="p-4"><strong>${esc(d.nama)}</strong> ${peran}<br><span class="text-xs text-slate-500">${esc(d.jabatan || '')}</span></td>
+                            <td class="p-4">${kompBadges(d._kodes)}</td>
+                            <td class="p-4">${app.formatWA(d.hp)}<span class="text-xs text-slate-500">${esc(d.email || '-')}</span></td>
+                            <td class="p-4">${statusBadge(d.aktif)}</td>
+                            <td class="p-4">${actions(
+                                manage && B('Ubah', `window.app.mod.guru.openForm('${d.id}')`, 'indigo'),
+                                manage && d.user_id && B('Reset PW', `resetPassword('${d.user_id}', '${nm}')`, 'amber'),
+                                manage && d.user_id && B(d.aktif ? 'Nonaktifkan' : 'Aktifkan', `toggleAccount('${d.user_id}', '${nm}', ${d.aktif !== false}, 'guru')`, 'slate'),
+                                app.canDelete('guru') && (d.user_id
+                                    ? B('Hapus', `removeAccount('${d.user_id}', '${nm}', 'guru')`, 'rose')
+                                    : B('Hapus', `removeRow('guru','${d.id}','guru')`, 'rose')))}</td></tr>`;
+                    },
+                    openForm: function(id) {
+                        const app = window.app, d = id ? app.list.find('guru', id) : null;
+                        setVal('guru-id', d ? d.id : '');
+                        document.getElementById('guru-title').textContent = d ? 'Ubah Data Guru' : 'Tambah Data Guru';
+                        setVal('guru-nip', d ? d.nip : '');
+                        setVal('guru-nama', d ? d.nama : '');
+                        setVal('guru-jabatan', d ? d.jabatan : 'Guru');
+                        setVal('guru-hp', d ? d.hp : '');
+                        // Bagian akun hanya untuk guru baru; email/password diubah lewat Reset PW
+                        const akun = document.getElementById('guru-akun');
+                        akun.classList.toggle('hidden', !!d);
+                        akun.querySelectorAll('input, select').forEach(i => { i.disabled = !!d; });
+                        if(!d) {
+                            setVal('guru-email', ''); setVal('guru-password', '');
+                            const roleSel = document.getElementById('guru-role');
+                            [...roleSel.options].forEach(o => { o.hidden = o.disabled = (o.value === 'pokja' && app.currentRole !== 'superadmin'); });
+                            roleSel.value = 'guru';
+                        }
+                        renderKompChecks('guru-komp', d ? d._kodes : (app.currentRole === 'pokja' ? app.currentKompetensi : []));
+                        app.ui.openModal('modal-guru-container');
+                    },
+                    save: function(e) {
+                        return submitForm(e, 'modal-guru-container', 'Data guru berhasil disimpan!', 'guru', async () => {
+                            const app = window.app, id = val('guru-id'), kodes = readKompChecks('guru-komp');
+                            const data = { nip: val('guru-nip'), nama: val('guru-nama'), jabatan: val('guru-jabatan'), hp: val('guru-hp') };
+                            if(!data.nama) throw new Error('Nama guru wajib diisi.');
+                            if(!kodes.length && (!id || app.currentRole === 'superadmin')) throw new Error('Pilih minimal satu konsentrasi keahlian.');
+                            if(id) {
+                                const { error } = await sbClient.rpc('ubah_guru', { p_id: id, p_data: data, p_kompetensi: kodes });
+                                if(error) throw new Error(friendlyError(error));
+                            } else {
+                                await callManageUsers({
+                                    action: 'create_user', role: val('guru-role'),
+                                    email: val('guru-email'), password: document.getElementById('guru-password').value,
+                                    nama: data.nama, kompetensi_kodes: kodes,
+                                    guru: { nip: data.nip, jabatan: data.jabatan, hp: data.hp }
+                                });
+                            }
+                        });
+                    }
+                },
+
+                /* ===== Siswa ===== */
+                siswa: {
+                    title: 'Data Siswa PKL', addLabel: 'Tambah Siswa',
+                    canAdd: () => window.app.canEdit('siswa'),
+                    headers: ['NIS / NISN','Nama Siswa','Konsentrasi & Kelas','Kontak HP','Alamat','Status','Aksi'],
+                    filter: { label: 'Semua konsentrasi', options: () => window.app.kompetensi.map(k => k.kode), match: (d, v) => d.kompetensi === v },
+                    load: () => q(sbClient.from('siswa').select('*').order('nama')),
+                    text: d => [d.nama, d.nis, d.nisn, d.kelas, d.email].join(' '),
+                    row: function(d) {
+                        const app = window.app, manage = app.manageByKomp([d.kompetensi]);
+                        const nm = jsq(d.nama);
+                        return `<tr class="border-b border-slate-100">
+                            <td class="p-4">${esc(d.nis)}<br><span class="text-xs text-slate-500">${esc(d.nisn || '-')}</span></td>
+                            <td class="p-4 font-bold">${esc(d.nama)}<br><span class="text-xs font-normal text-slate-500">${esc(d.email || '-')}</span></td>
+                            <td class="p-4">${kompBadges(d.kompetensi ? [d.kompetensi] : [])}<br><span class="text-xs">${esc(d.kelas)}</span></td>
+                            <td class="p-4">${app.formatWA(d.hp)}</td>
+                            <td class="p-4 text-xs">${esc(d.alamat || '-')}</td>
+                            <td class="p-4">${statusBadge(d.aktif)}</td>
+                            <td class="p-4">${actions(
+                                manage && B('Ubah', `window.app.mod.siswa.openForm('${d.id}')`, 'indigo'),
+                                manage && d.user_id && B('Reset PW', `resetPassword('${d.user_id}', '${nm}')`, 'amber'),
+                                manage && d.user_id && B(d.aktif ? 'Nonaktifkan' : 'Aktifkan', `toggleAccount('${d.user_id}', '${nm}', ${d.aktif !== false}, 'siswa')`, 'slate'),
+                                manage && app.canDelete('siswa') && (d.user_id
+                                    ? B('Hapus', `removeAccount('${d.user_id}', '${nm}', 'siswa')`, 'rose')
+                                    : B('Hapus', `removeRow('siswa','${d.id}','siswa')`, 'rose')))}</td></tr>`;
+                    },
+                    openForm: function(id) {
+                        const app = window.app, d = id ? app.list.find('siswa', id) : null;
+                        setVal('siswa-id', d ? d.id : '');
+                        document.getElementById('siswa-title').textContent = d ? 'Ubah Data Siswa' : 'Tambah Data Siswa';
+                        setVal('siswa-nis', d ? d.nis : '');
+                        setVal('siswa-nisn', d ? d.nisn : '');
+                        setVal('siswa-nama', d ? d.nama : '');
+                        setVal('siswa-kelas', d ? d.kelas : '');
+                        setVal('siswa-hp', d ? d.hp : '');
+                        setVal('siswa-alamat', d ? d.alamat : '');
+                        fillKompSelect('siswa-kompetensi', d ? d.kompetensi : null);
+                        const akun = document.getElementById('siswa-akun');
+                        akun.classList.toggle('hidden', !!d);
+                        akun.querySelectorAll('input').forEach(i => { i.disabled = !!d; });
+                        if(!d) { setVal('siswa-email', ''); setVal('siswa-password', ''); }
+                        app.ui.openModal('modal-siswa-container');
+                    },
+                    save: function(e) {
+                        return submitForm(e, 'modal-siswa-container', 'Data siswa berhasil disimpan!', 'siswa', async () => {
+                            const app = window.app, id = val('siswa-id');
+                            const kode = val('siswa-kompetensi');
+                            const data = { nis: val('siswa-nis'), nisn: val('siswa-nisn') || null, nama: val('siswa-nama'), kelas: val('siswa-kelas'), hp: val('siswa-hp') || null, alamat: val('siswa-alamat') || null };
+                            if(!data.nis || !data.nama || !data.kelas) throw new Error('NIS, nama, dan kelas wajib diisi.');
+                            if(id) {
+                                const komp = app.kompetensi.find(k => k.kode === kode);
+                                if(!komp) throw new Error('Konsentrasi tidak valid.');
+                                await writeRow('siswa', id, { ...data, kompetensi_id: komp.id });
+                            } else {
+                                await callManageUsers({
+                                    action: 'create_user', role: 'siswa',
+                                    email: val('siswa-email'), password: document.getElementById('siswa-password').value,
+                                    nama: data.nama, kompetensi_kode: kode,
+                                    siswa: { nis: data.nis, nisn: data.nisn || '', kelas: data.kelas, hp: data.hp || '', alamat: data.alamat || '' }
+                                });
+                            }
+                        });
+                    }
+                },
+
+                /* ===== Penempatan ===== */
+                penempatan: {
+                    title: 'Penempatan & Plotting Siswa PKL', addLabel: 'Plotting Penempatan',
+                    canAdd: () => window.app.canEdit('penempatan'),
+                    headers: ['Siswa','Industri Tujuan','Guru Pembimbing','Tahun Pelajaran','Periode','Status','Aksi'],
+                    filter: { label: 'Semua status', options: () => ['aktif','selesai','dibatalkan'], match: (d, v) => d.status === v },
+                    selectCols: 'id, siswa_id, industri_id, guru_id, tahun_pelajaran_id, tgl_mulai, tgl_selesai, status, siswa(nama, nis, kelas, kompetensi), industri(nama, alamat, kota), guru(nama), tahun_pelajaran(nama)',
+                    load: function() {
+                        return q(sbClient.from('penempatan').select(this.selectCols).order('tgl_mulai', { ascending: false }));
+                    },
+                    text: d => [d.siswa && d.siswa.nama, d.siswa && d.siswa.nis, d.industri && d.industri.nama, d.guru && d.guru.nama].join(' '),
+                    row: function(d) {
+                        const app = window.app, kom = d.siswa ? d.siswa.kompetensi : null;
+                        const manage = app.canEdit('penempatan') && app.manageByKomp([kom]);
+                        const tone = { aktif: 'bg-emerald-50 text-emerald-700', selesai: 'bg-slate-100 text-slate-600', dibatalkan: 'bg-rose-50 text-rose-700' }[d.status] || 'bg-slate-100';
+                        return `<tr class="border-b border-slate-100">
+                            <td class="p-4"><strong>${esc(d.siswa ? d.siswa.nama : '-')}</strong><br><span class="text-xs text-slate-500">${esc(d.siswa ? d.siswa.nis : '')} · ${esc(d.siswa ? d.siswa.kelas : '')} · ${esc(kom || '')}</span></td>
+                            <td class="p-4 text-indigo-600">${esc(d.industri ? d.industri.nama : '-')}</td>
+                            <td class="p-4">${esc(d.guru ? d.guru.nama : '-')}</td>
+                            <td class="p-4 text-xs">${esc(d.tahun_pelajaran ? d.tahun_pelajaran.nama : '-')}</td>
+                            <td class="p-4 text-xs">${fmtDate(d.tgl_mulai)} s.d ${fmtDate(d.tgl_selesai)}</td>
+                            <td class="p-4"><span class="px-2 py-0.5 ${tone} rounded text-xs">${esc(d.status)}</span></td>
+                            <td class="p-4">${actions(
+                                manage && B('Ubah', `window.app.mod.penempatan.openForm('${d.id}')`, 'indigo'),
+                                manage && app.canDelete('penempatan') && B('Hapus', `removeRow('penempatan','${d.id}','penempatan')`, 'rose'))}</td></tr>`;
+                    },
+                    tapelCache: [],
+                    openForm: async function(id) {
+                        const app = window.app, d = id ? app.list.find('penempatan', id) : null;
+                        try {
+                            const [siswa, industri, guru, tapel] = await Promise.all([
+                                q(sbClient.from('siswa').select('id, nama, nis, kelas, kompetensi').eq('aktif', true).order('nama')),
+                                q(sbClient.from('industri').select('id, nama').eq('aktif', true).order('nama')),
+                                q(sbClient.rpc('list_guru_untuk_penempatan')),
+                                q(sbClient.from('tahun_pelajaran').select('id, nama, tgl_mulai, tgl_selesai, status').order('tgl_mulai', { ascending: false }))
+                            ]);
+                            this.tapelCache = tapel;
+                            const sSel = document.getElementById('pen-siswa');
+                            sSel.innerHTML = d
+                                ? `<option value="${esc(d.siswa_id)}">${esc(d.siswa ? d.siswa.nama : '-')}</option>`
+                                : '<option value="">Pilih siswa</option>' + siswa.map(s => `<option value="${esc(s.id)}">${esc(s.nama)} (${esc(s.kelas)} · ${esc(s.kompetensi)})</option>`).join('');
+                            sSel.disabled = !!d;
+                            document.getElementById('pen-industri').innerHTML = '<option value="">Pilih industri</option>' + industri.map(i => `<option value="${esc(i.id)}">${esc(i.nama)}</option>`).join('');
+                            document.getElementById('pen-guru').innerHTML = '<option value="">Pilih guru pembimbing</option>' + guru.map(g => `<option value="${esc(g.id)}">${esc(g.nama)} (${esc((g.kompetensi || []).join(', ') || '-')})</option>`).join('');
+                            document.getElementById('pen-tapel').innerHTML = '<option value="">Pilih tahun pelajaran</option>' + tapel.map(t => `<option value="${esc(t.id)}">${esc(t.nama)}${t.status === 'Aktif' ? ' (aktif)' : ''}</option>`).join('');
+
+                            setVal('pen-id', d ? d.id : '');
+                            document.getElementById('pen-title').textContent = d ? 'Ubah Penempatan' : 'Plotting Penempatan';
+                            setVal('pen-industri', d ? d.industri_id : '');
+                            setVal('pen-guru', d ? d.guru_id : '');
+                            setVal('pen-status', d ? d.status : 'aktif');
+                            if(d) {
+                                setVal('pen-tapel', d.tahun_pelajaran_id);
+                                setVal('pen-mulai', d.tgl_mulai); setVal('pen-selesai', d.tgl_selesai);
+                            } else {
+                                const aktif = tapel.find(t => t.status === 'Aktif');
+                                setVal('pen-tapel', aktif ? aktif.id : '');
+                                setVal('pen-mulai', aktif ? aktif.tgl_mulai : ''); setVal('pen-selesai', aktif ? aktif.tgl_selesai : '');
+                            }
+                            app.ui.openModal('modal-penempatan-container');
+                        } catch(err) { app.ui.showToast('Gagal memuat pilihan: ' + err.message, 'error'); }
+                    },
+                    onTapel: function() {
+                        const t = this.tapelCache.find(x => x.id === val('pen-tapel'));
+                        if(t) { setVal('pen-mulai', t.tgl_mulai); setVal('pen-selesai', t.tgl_selesai); }
+                    },
+                    save: function(e) {
+                        return submitForm(e, 'modal-penempatan-container', 'Penempatan berhasil disimpan!', 'penempatan', async () => {
+                            const id = val('pen-id');
+                            const payload = {
+                                industri_id: val('pen-industri'), guru_id: val('pen-guru'),
+                                tahun_pelajaran_id: val('pen-tapel'),
+                                tgl_mulai: val('pen-mulai'), tgl_selesai: val('pen-selesai'), status: val('pen-status')
+                            };
+                            if(!id) payload.siswa_id = val('pen-siswa');
+                            if((!id && !payload.siswa_id) || !payload.industri_id || !payload.guru_id || !payload.tahun_pelajaran_id) {
+                                throw new Error('Siswa, industri, guru pembimbing, dan tahun pelajaran wajib dipilih.');
+                            }
+                            if(!payload.tgl_mulai || !payload.tgl_selesai) throw new Error('Periode penempatan wajib diisi.');
+                            if(payload.tgl_selesai < payload.tgl_mulai) throw new Error('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+                            await writeRow('penempatan', id, payload);
+                        });
+                    }
+                },
+
+                /* ===== Surat Pengantar (berdasarkan penempatan) ===== */
+                surat: {
+                    title: 'Penerbitan Surat Pengantar PKL',
+                    headers: ['Nama Siswa','Industri Tujuan','Periode','Aksi Surat'],
+                    filter: null,
+                    load: function() {
+                        return q(sbClient.from('penempatan').select(window.app.mod.penempatan.selectCols)
+                            .neq('status', 'dibatalkan').order('tgl_mulai', { ascending: false }));
+                    },
+                    text: d => [d.siswa && d.siswa.nama, d.industri && d.industri.nama].join(' '),
+                    row: function(d) {
+                        return `<tr class="border-b border-slate-100"><td class="p-4 font-semibold">${esc(d.siswa ? d.siswa.nama : '-')}<br><span class="text-xs font-normal text-slate-500">${esc(d.siswa ? d.siswa.nis : '')} · ${esc(d.siswa ? d.siswa.kelas : '')}</span></td><td class="p-4 text-indigo-600">${esc(d.industri ? d.industri.nama : '-')}</td><td class="p-4 text-xs">${fmtDate(d.tgl_mulai)} s.d ${fmtDate(d.tgl_selesai)}</td><td class="p-4">${B('Cetak Surat', `window.app.mod.surat.cetak('${d.id}')`, 'indigo')}</td></tr>`;
+                    },
+                    cetak: function(id) {
+                        const d = window.app.list.find('surat', id);
+                        if(!d) return;
+                        const w = window.open('', '_blank');
+                        if(!w) return window.app.ui.showToast('Pop-up diblokir browser. Izinkan pop-up untuk mencetak surat.', 'error');
+                        const s = d.siswa || {}, ind = d.industri || {}, g = d.guru || {};
+                        // Penutup script ditulis <\/script> agar tidak memutus script utama halaman ini
+                        w.document.write(`<html><head><title>Surat Pengantar</title><style>body{font-family:sans-serif;padding:40px;line-height:1.6;}h2,h3{text-align:center;margin:0;}</style></head><body><h3>SMK NEGERI 1 GOMBONG</h3><h2>SURAT PENGANTAR PKL</h2><hr><p>Kepada Yth. Pimpinan ${esc(ind.nama)}<br>${esc(ind.alamat || '')} ${esc(ind.kota || '')}</p><p>Dengan hormat, mengajukan siswa:</p><p><strong>${esc(s.nama)}</strong><br>NIS ${esc(s.nis)} · Kelas ${esc(s.kelas)} · ${esc(s.kompetensi)}</p><p>Periode: ${esc(fmtDate(d.tgl_mulai))} s.d ${esc(fmtDate(d.tgl_selesai))}</p><p>Guru pembimbing: ${esc(g.nama || '-')}</p><script>window.print();<\/script></body></html>`);
+                        w.document.close();
+                    }
+                }
+            },
+
+            /* ---------- Tampilan non-master (dipertahankan, disempurnakan di Tahap 4) ---------- */
+            views: {
+                renderDashboard: function(container) {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-bold text-xl"><i data-lucide="building-2" class="w-7 h-7"></i></div>
+                                <div><p class="text-xs text-slate-400 font-semibold uppercase">Total Industri</p><h3 id="stat-ind" class="text-2xl font-bold text-slate-800">-</h3></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-bold text-xl"><i data-lucide="graduation-cap" class="w-7 h-7"></i></div>
+                                <div><p class="text-xs text-slate-400 font-semibold uppercase">Total Siswa PKL</p><h3 id="stat-sis" class="text-2xl font-bold text-slate-800">-</h3></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center font-bold text-xl"><i data-lucide="users" class="w-7 h-7"></i></div>
+                                <div><p class="text-xs text-slate-400 font-semibold uppercase">Guru Pembimbing</p><h3 id="stat-guru" class="text-2xl font-bold text-slate-800">-</h3></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-14 h-14 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center font-bold text-xl"><i data-lucide="map-pin" class="w-7 h-7"></i></div>
+                                <div><p class="text-xs text-slate-400 font-semibold uppercase">Penempatan Aktif</p><h3 id="stat-pen" class="text-2xl font-bold text-slate-800">-</h3></div>
+                            </div>
+                        </div>
+                        <div class="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                            <h2 class="text-lg font-bold text-slate-900 mb-2">Selamat Datang di SIM PKL SMK Negeri 1 Gombong</h2>
+                            <p class="text-sm text-slate-600 leading-relaxed">Sistem Informasi Manajemen Praktik Kerja Lapangan terintegrasi penuh dengan Supabase Cloud. Angka di atas hanya mencakup data yang menjadi kewenangan akun Anda.</p>
+                        </div>
+                    `;
+                    window.app.db.loadDashboardStats();
+                },
+
+                renderPresensi: function(container) {
+                    container.innerHTML = `
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100"><h3 class="font-bold text-slate-900">Rekap Presensi Harian Siswa</h3></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Waktu</th><th class="p-4">Siswa</th><th class="p-4">Jenis</th><th class="p-4">Status GPS</th></tr></thead>
+                                    <tbody id="tbody-presensi"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.loadPresensi();
+                },
+
+                renderJurnal: function(container) {
+                    container.innerHTML = `
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100"><h3 class="font-bold text-slate-900">Verifikasi Jurnal Kegiatan Siswa</h3></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Tanggal</th><th class="p-4">Siswa</th><th class="p-4">Uraian</th><th class="p-4">Status</th><th class="p-4">Aksi</th></tr></thead>
+                                    <tbody id="tbody-jurnal-verif"><tr><td colspan="5" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.loadJurnalVerif();
+                },
+
+                renderVisitasi: function(container) {
+                    container.innerHTML = `
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="font-bold text-slate-900">Monitoring & Visitasi Industri</h3>
+                                <button onclick="window.app.db.openModalVisitasi()" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Tambah Visitasi</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Tanggal & Guru</th><th class="p-4">Industri</th><th class="p-4">Catatan</th><th class="p-4">Aksi</th></tr></thead>
+                                    <tbody id="tbody-visitasi"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.loadVisitasi();
+                },
+
+                renderPenilaian: function(container) {
+                    container.innerHTML = `
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="font-bold text-slate-900">Penilaian Nilai PKL dari Industri</h3>
+                                <button onclick="window.app.db.openModalNilai()" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Input Nilai</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Siswa & Industri</th><th class="p-4">Komponen Nilai</th><th class="p-4">Akhir & Predikat</th><th class="p-4">Aksi</th></tr></thead>
+                                    <tbody id="tbody-penilaian"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.loadPenilaian();
+                },
+
+                renderPresensiSiswa: function(container) {
+                    container.innerHTML = `
+                        <div class="max-w-xl mx-auto bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                            <h3 class="text-xl font-bold text-slate-900 mb-2">Presensi GPS Siswa</h3>
+                            <div id="gps-status-box" class="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6 text-sm text-slate-700">Memuat lokasi GPS...</div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <button onclick="window.app.db.submitPresensi('Masuk')" class="py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm">Presensi Masuk</button>
+                                <button onclick="window.app.db.submitPresensi('Pulang')" class="py-3 bg-rose-600 text-white font-semibold rounded-xl text-sm">Presensi Pulang</button>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.initGPSCheck();
+                },
+
+                renderJurnalSiswa: function(container) {
+                    container.innerHTML = `
+                        <div class="max-w-3xl mx-auto space-y-6">
+                            <div class="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+                                <h3 class="text-xl font-bold text-slate-900 mb-4">Buat Jurnal Harian PKL</h3>
+                                <form onsubmit="window.app.db.saveJurnalSiswa(event)" class="space-y-4">
+                                    <div class="grid grid-cols-3 gap-4">
+                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Tanggal</label><input type="date" id="j-tgl" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
+                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Jam Mulai</label><input type="time" id="j-mulai" value="07:30" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
+                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Jam Selesai</label><input type="time" id="j-selesai" value="15:30" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
+                                    </div>
+                                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">Uraian Pekerjaan</label><textarea id="j-uraian" rows="3" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></textarea></div>
+                                    <button type="submit" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim Jurnal</button>
+                                </form>
+                            </div>
+                            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                                <h4 class="font-bold text-slate-900 mb-4">Riwayat Jurnal</h4>
+                                <div id="riwayat-jurnal-siswa" class="space-y-3">Memuat riwayat...</div>
+                            </div>
+                        </div>
+                    `;
+                    window.app.db.loadJurnalSiswa();
+                }
+            },
+
+            db: {
+                loadDashboardStats: async function() {
+                    if(!sbClient) return;
+                    const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+                    try {
+                        const [ind, sis, gur, pen] = await Promise.all([
+                            sbClient.from('industri').select('*', { count: 'exact', head: true }),
+                            sbClient.from('siswa').select('*', { count: 'exact', head: true }),
+                            sbClient.from('guru').select('*', { count: 'exact', head: true }),
+                            sbClient.from('penempatan').select('*', { count: 'exact', head: true }).eq('status', 'aktif')
+                        ]);
+                        set('stat-ind', ind.error ? '-' : (ind.count || 0));
+                        set('stat-sis', sis.error ? '-' : (sis.count || 0));
+                        set('stat-guru', gur.error ? '-' : (gur.count || 0));
+                        set('stat-pen', pen.error ? '-' : (pen.count || 0));
+                    } catch(e) { console.error(e); }
+                },
+
+                failRow: function(tbody, cols, err) {
+                    tbody.innerHTML = `<tr><td colspan="${cols}" class="p-6 text-center text-rose-600">Gagal memuat data: ${esc(err.message)}</td></tr>`;
+                },
+
+                loadPresensi: async function() {
+                    const tbody = document.getElementById('tbody-presensi');
+                    if(!tbody) return;
+                    try {
+                        const data = await q(sbClient.from('presensi').select('*'));
+                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
+                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4 text-xs">${esc(new Date(d.waktu).toLocaleString())}</td><td class="p-4">${esc(d.siswa_id)}</td><td class="p-4">${esc(d.jenis)}</td><td class="p-4 text-xs text-emerald-600">${esc(d.status_otomatis || 'Valid')}</td></tr>`).join('');
+                    } catch(err) { this.failRow(tbody, 4, err); }
+                },
+
+                loadJurnalVerif: async function() {
+                    const tbody = document.getElementById('tbody-jurnal-verif');
+                    if(!tbody) return;
+                    try {
+                        const data = await q(sbClient.from('jurnal').select('*'));
+                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
+                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4 text-xs">${esc(d.tanggal)}</td><td class="p-4">${esc(d.siswa_id)}</td><td class="p-4 text-xs">${esc(d.uraian)}</td><td class="p-4">${esc(d.status)}</td><td class="p-4"><button onclick="window.app.db.updateJurnalStatus('${esc(d.id)}','Approved')" class="px-3 py-1 bg-emerald-600 text-white rounded text-xs">Setujui</button></td></tr>`).join('');
+                    } catch(err) { this.failRow(tbody, 5, err); }
+                },
+                updateJurnalStatus: async function(id, status) {
+                    try {
+                        await writeRow('jurnal', id, { status: status });
+                        window.app.ui.showToast('Status jurnal diperbarui!');
+                        this.loadJurnalVerif();
+                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                },
+
+                loadVisitasi: async function() {
+                    const tbody = document.getElementById('tbody-visitasi');
+                    if(!tbody) return;
+                    try {
+                        const data = await q(sbClient.from('visitasi').select('*'));
+                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
+                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4">${esc(d.tanggal)}<br><span class="text-xs">${esc(d.nama_guru)}</span></td><td class="p-4">${esc(d.nama_industri)}</td><td class="p-4 text-xs">${esc(d.catatan)}</td><td class="p-4"><button onclick="removeRow('visitasi','${esc(d.id)}','')" class="px-3 py-1 bg-rose-50 text-rose-700 rounded text-xs">Hapus</button></td></tr>`).join('');
+                    } catch(err) { this.failRow(tbody, 4, err); }
+                },
+                openModalVisitasi: async function() {
+                    const ind = document.getElementById('vis-industri');
+                    ind.innerHTML = '<option value="">Pilih Industri</option>';
+                    try {
+                        const rows = await q(sbClient.from('industri').select('id, nama').order('nama'));
+                        rows.forEach(i => ind.innerHTML += `<option value="${esc(i.id)}" data-name="${esc(i.nama)}">${esc(i.nama)}</option>`);
+                    } catch(err) { window.app.ui.showToast('Gagal memuat industri: ' + err.message, 'error'); }
+                    window.app.ui.openModal('modal-visitasi-container');
+                },
+                saveVisitasi: async function(e) {
+                    e.preventDefault();
+                    const ind = document.getElementById('vis-industri');
+                    const payload = {
+                        guru_id: window.app.currentUser.id,
+                        nama_guru: window.app.currentUser.nama,
+                        industri_id: ind.value,
+                        nama_industri: ind.selectedIndex > 0 ? ind.options[ind.selectedIndex].getAttribute('data-name') : '-',
+                        tanggal: document.getElementById('vis-tgl').value,
+                        catatan: document.getElementById('vis-catatan').value
+                    };
+                    try {
+                        await writeRow('visitasi', null, payload);
+                        window.app.ui.closeModal('modal-visitasi-container');
+                        window.app.ui.showToast('Visitasi disimpan!');
+                        this.loadVisitasi();
+                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                },
+
+                loadPenilaian: async function() {
+                    const tbody = document.getElementById('tbody-penilaian');
+                    if(!tbody) return;
+                    try {
+                        const data = await q(sbClient.from('penilaian').select('*'));
+                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
+                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4"><strong>${esc(d.nama_siswa)}</strong><br><span class="text-xs">${esc(d.nama_industri)}</span></td><td class="p-4 text-xs">Disiplin: ${esc(d.nilai_disiplin)}, Teknis: ${esc(d.nilai_teknis)}</td><td class="p-4"><strong>${esc(d.nilai_akhir)}</strong></td><td class="p-4"><button onclick="removeRow('penilaian','${esc(d.id)}','')" class="px-3 py-1 bg-rose-50 text-rose-700 rounded text-xs">Hapus</button></td></tr>`).join('');
+                    } catch(err) { this.failRow(tbody, 4, err); }
+                },
+                openModalNilai: async function() {
+                    const s = document.getElementById('nil-siswa');
+                    s.innerHTML = '<option value="">Pilih Siswa</option>';
+                    try {
+                        const rows = await q(sbClient.from('penempatan').select('siswa_id, siswa(nama), industri(nama)').eq('status', 'aktif'));
+                        rows.forEach(p => {
+                            const sn = p.siswa ? p.siswa.nama : '-', inn = p.industri ? p.industri.nama : '-';
+                            s.innerHTML += `<option value="${esc(p.siswa_id)}" data-name="${esc(sn)}" data-ind="${esc(inn)}">${esc(sn)} (${esc(inn)})</option>`;
+                        });
+                    } catch(err) { window.app.ui.showToast('Gagal memuat siswa: ' + err.message, 'error'); }
+                    window.app.ui.openModal('modal-nilai-container');
+                },
+                saveNilai: async function(e) {
+                    e.preventDefault();
+                    const s = document.getElementById('nil-siswa');
+                    const d = parseFloat(document.getElementById('nil-disiplin').value) || 0;
+                    const t = parseFloat(document.getElementById('nil-teknis').value) || 0;
+                    const k = parseFloat(document.getElementById('nil-kerjasama').value) || 0;
+                    const i = parseFloat(document.getElementById('nil-inisiatif').value) || 0;
+                    const akhir = ((d + t + k + i) / 4).toFixed(2);
+                    const payload = {
+                        siswa_id: s.value,
+                        nama_siswa: s.selectedIndex > 0 ? s.options[s.selectedIndex].getAttribute('data-name') : '-',
+                        nama_industri: s.selectedIndex > 0 ? s.options[s.selectedIndex].getAttribute('data-ind') : '-',
+                        nilai_disiplin: d,
+                        nilai_teknis: t,
+                        nilai_kerjasama: k,
+                        nilai_inisiatif: i,
+                        nilai_akhir: parseFloat(akhir)
+                    };
+                    try {
+                        await writeRow('penilaian', null, payload);
+                        window.app.ui.closeModal('modal-nilai-container');
+                        window.app.ui.showToast('Nilai disimpan!');
+                        this.loadPenilaian();
+                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                },
+
+                initGPSCheck: function() {
+                    const box = document.getElementById('gps-status-box');
+                    if(navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(pos => {
+                            box.innerHTML = `<strong class="text-emerald-700">GPS Aktif:</strong> Lat: ${pos.coords.latitude.toFixed(5)}, Lng: ${pos.coords.longitude.toFixed(5)}`;
+                        }, err => { box.innerHTML = `<strong class="text-rose-700">GPS Error:</strong> ${esc(err.message)}`; });
+                    }
+                },
+                submitPresensi: async function(jenis) {
+                    const payload = {
+                        siswa_id: window.app.currentUser.nis || window.app.currentUser.nama,
+                        penempatan_id: 'default-pen',
+                        tanggal: new Date().toISOString().split('T')[0],
+                        waktu: new Date().toISOString(),
+                        jenis: jenis,
+                        status_otomatis: 'Valid GPS'
+                    };
+                    try {
+                        await writeRow('presensi', null, payload);
+                        window.app.ui.showToast(`Presensi ${jenis} berhasil!`);
+                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                },
+
+                loadJurnalSiswa: async function() {
+                    const wrap = document.getElementById('riwayat-jurnal-siswa');
+                    if(!wrap) return;
+                    try {
+                        const data = await q(sbClient.from('jurnal').select('*').eq('siswa_id', window.app.currentUser.nis || window.app.currentUser.nama));
+                        if(data.length === 0) { wrap.innerHTML = '<p class="text-sm text-slate-400">Belum ada jurnal.</p>'; return; }
+                        wrap.innerHTML = data.map(d => `<div class="p-4 bg-slate-50 rounded-xl text-sm"><div class="flex justify-between"><strong>${esc(d.tanggal)}</strong><span>${esc(d.status)}</span></div><p>${esc(d.uraian)}</p></div>`).join('');
+                    } catch(err) { wrap.innerHTML = `<p class="text-sm text-rose-600">Gagal memuat riwayat: ${esc(err.message)}</p>`; }
+                },
+                saveJurnalSiswa: async function(e) {
+                    e.preventDefault();
+                    const payload = {
+                        siswa_id: window.app.currentUser.nis || window.app.currentUser.nama,
+                        penempatan_id: 'default-pen',
+                        tanggal: document.getElementById('j-tgl').value,
+                        jam_mulai: document.getElementById('j-mulai').value,
+                        jam_selesai: document.getElementById('j-selesai').value,
+                        uraian: document.getElementById('j-uraian').value,
+                        status: 'Submitted'
+                    };
+                    try {
+                        await writeRow('jurnal', null, payload);
+                        window.app.ui.showToast('Jurnal terkirim!');
+                        this.loadJurnalSiswa();
+                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
+                }
+            }
+        };
+
+        /* ================= MODAL ================= */
+        const INP = 'w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm';
+        const LBL = 'block text-xs font-semibold text-slate-500 mb-1';
+        const FOOT = (modalId) => `<div class="flex justify-end gap-3 pt-4"><button type="button" onclick="window.app.ui.closeModal('${modalId}')" class="px-4 py-2 bg-slate-100 rounded-xl text-sm">Batal</button><button type="submit" class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm">Simpan</button></div>`;
+        const WRAP = (id, width, inner) => `<div id="${id}" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden"><div class="bg-white rounded-2xl shadow-xl ${width} w-full p-6 max-h-[90vh] overflow-y-auto">${inner}</div></div>`;
+
+        document.getElementById('modals-container').innerHTML = [
+
+            WRAP('modal-tapel-container', 'max-w-lg', `
+                <h3 id="tapel-title" class="font-bold text-lg text-slate-900 mb-4">Form Tahun Pelajaran</h3>
+                <form onsubmit="window.app.mod.tapel.save(event)" class="space-y-4">
+                    <input type="hidden" id="tapel-id">
+                    <div><label class="${LBL}">Nama Tapel</label><input type="text" id="tapel-nama" required class="${INP}"></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Mulai</label><input type="date" id="tapel-mulai" required class="${INP}"></div>
+                        <div><label class="${LBL}">Selesai</label><input type="date" id="tapel-selesai" required class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Status</label><select id="tapel-status" class="${INP}"><option value="Aktif">Aktif</option><option value="Nonaktif">Nonaktif</option></select></div>
+                    ${FOOT('modal-tapel-container')}
+                </form>`),
+
+            WRAP('modal-industri-container', 'max-w-xl', `
+                <h3 id="ind-title" class="font-bold text-lg text-slate-900 mb-4">Form Data Industri</h3>
+                <form onsubmit="window.app.mod.industri.save(event)" class="space-y-4">
+                    <input type="hidden" id="ind-id">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Nama Industri</label><input type="text" id="ind-nama" required class="${INP}"></div>
+                        <div><label class="${LBL}">Bidang Usaha</label><input type="text" id="ind-bidang" class="${INP}"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Kota / Kabupaten</label><input type="text" id="ind-kota" required class="${INP}"></div>
+                        <div><label class="${LBL}">Kontak Person (opsional)</label><input type="text" id="ind-pembimbing" class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Alamat</label><textarea id="ind-alamat" rows="2" class="${INP}"></textarea></div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div><label class="${LBL}">No HP</label><input type="text" id="ind-hp" class="${INP}"></div>
+                        <div><label class="${LBL}">Latitude</label><input type="number" step="any" id="ind-lat" class="${INP}"></div>
+                        <div><label class="${LBL}">Longitude</label><input type="number" step="any" id="ind-lng" class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Radius presensi (meter, 10 - 5000)</label><input type="number" id="ind-radius" value="100" min="10" max="5000" required class="${INP}"></div>
+                    <div><label class="${LBL}">Konsentrasi keahlian yang dapat ditempatkan di industri ini</label><div id="ind-komp" class="flex flex-wrap gap-2"></div></div>
+                    ${FOOT('modal-industri-container')}
+                </form>`),
+
+            WRAP('modal-pl-container', 'max-w-lg', `
+                <h3 class="font-bold text-lg text-slate-900 mb-1">Buat Akun Pembimbing Lapangan</h3>
+                <p class="text-sm text-slate-500 mb-4">Industri: <strong id="pl-industri-nama"></strong>. Satu industri hanya memiliki satu pembimbing lapangan.</p>
+                <form onsubmit="window.app.mod.industri.savePL(event)" class="space-y-4">
+                    <input type="hidden" id="pl-industri-id">
+                    <div><label class="${LBL}">Nama</label><input type="text" id="pl-nama" required class="${INP}"></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Jabatan</label><input type="text" id="pl-jabatan" class="${INP}"></div>
+                        <div><label class="${LBL}">No HP</label><input type="text" id="pl-hp" class="${INP}"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Email</label><input type="email" id="pl-email" required class="${INP}"></div>
+                        <div><label class="${LBL}">Password awal (min. 8 karakter)</label><input type="password" id="pl-password" minlength="8" autocomplete="new-password" required class="${INP}"></div>
+                    </div>
+                    ${FOOT('modal-pl-container')}
+                </form>`),
+
+            WRAP('modal-guru-container', 'max-w-lg', `
+                <h3 id="guru-title" class="font-bold text-lg text-slate-900 mb-4">Form Data Guru</h3>
+                <form onsubmit="window.app.mod.guru.save(event)" class="space-y-4">
+                    <input type="hidden" id="guru-id">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">NIP</label><input type="text" id="guru-nip" class="${INP}"></div>
+                        <div><label class="${LBL}">Nama</label><input type="text" id="guru-nama" required class="${INP}"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Jabatan</label><input type="text" id="guru-jabatan" value="Guru" class="${INP}"></div>
+                        <div><label class="${LBL}">No HP</label><input type="text" id="guru-hp" class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Konsentrasi keahlian (boleh lebih dari satu, guru dapat membimbing lintas jurusan)</label><div id="guru-komp" class="flex flex-wrap gap-2"></div></div>
+                    <div id="guru-akun" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="${LBL}">Email</label><input type="email" id="guru-email" required class="${INP}"></div>
+                            <div><label class="${LBL}">Password awal (min. 8 karakter)</label><input type="password" id="guru-password" minlength="8" autocomplete="new-password" required class="${INP}"></div>
+                        </div>
+                        <div><label class="${LBL}">Role</label><select id="guru-role" class="${INP}"><option value="guru">Guru Pembimbing</option><option value="pokja">Pokja PKL</option></select></div>
+                    </div>
+                    ${FOOT('modal-guru-container')}
+                </form>`),
+
+            WRAP('modal-siswa-container', 'max-w-xl', `
+                <h3 id="siswa-title" class="font-bold text-lg text-slate-900 mb-4">Form Data Siswa</h3>
+                <form onsubmit="window.app.mod.siswa.save(event)" class="space-y-4">
+                    <input type="hidden" id="siswa-id">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">NIS</label><input type="text" id="siswa-nis" required class="${INP}"></div>
+                        <div><label class="${LBL}">NISN</label><input type="text" id="siswa-nisn" class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Nama Siswa</label><input type="text" id="siswa-nama" required class="${INP}"></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Konsentrasi</label><select id="siswa-kompetensi" class="${INP}"></select></div>
+                        <div><label class="${LBL}">Kelas</label><input type="text" id="siswa-kelas" required class="${INP}"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">No HP</label><input type="text" id="siswa-hp" class="${INP}"></div>
+                        <div><label class="${LBL}">Alamat</label><input type="text" id="siswa-alamat" class="${INP}"></div>
+                    </div>
+                    <div id="siswa-akun" class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Email</label><input type="email" id="siswa-email" required class="${INP}"></div>
+                        <div><label class="${LBL}">Password awal (min. 8 karakter)</label><input type="password" id="siswa-password" minlength="8" autocomplete="new-password" required class="${INP}"></div>
+                    </div>
+                    ${FOOT('modal-siswa-container')}
+                </form>`),
+
+            WRAP('modal-penempatan-container', 'max-w-lg', `
+                <h3 id="pen-title" class="font-bold text-lg text-slate-900 mb-4">Plotting Penempatan</h3>
+                <form onsubmit="window.app.mod.penempatan.save(event)" class="space-y-4">
+                    <input type="hidden" id="pen-id">
+                    <div><label class="${LBL}">Siswa</label><select id="pen-siswa" required class="${INP}"></select></div>
+                    <div><label class="${LBL}">Industri</label><select id="pen-industri" required class="${INP}"></select></div>
+                    <div><label class="${LBL}">Guru Pembimbing (boleh dari konsentrasi lain)</label><select id="pen-guru" required class="${INP}"></select></div>
+                    <div><label class="${LBL}">Tahun Pelajaran</label><select id="pen-tapel" onchange="window.app.mod.penempatan.onTapel()" required class="${INP}"></select></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Mulai</label><input type="date" id="pen-mulai" required class="${INP}"></div>
+                        <div><label class="${LBL}">Selesai</label><input type="date" id="pen-selesai" required class="${INP}"></div>
+                    </div>
+                    <div><label class="${LBL}">Status</label><select id="pen-status" class="${INP}"><option value="aktif">Aktif</option><option value="selesai">Selesai</option><option value="dibatalkan">Dibatalkan</option></select></div>
+                    ${FOOT('modal-penempatan-container')}
+                </form>`),
+
+            // Modal visitasi dan nilai: dipertahankan, disempurnakan di Tahap 4
+            WRAP('modal-visitasi-container', 'max-w-lg', `
+                <h3 class="font-bold text-lg text-slate-900 mb-4">Form Visitasi</h3>
+                <form onsubmit="window.app.db.saveVisitasi(event)" class="space-y-4">
+                    <div><label class="${LBL}">Industri</label><select id="vis-industri" required class="${INP}"></select></div>
+                    <div><label class="${LBL}">Tanggal</label><input type="date" id="vis-tgl" required class="${INP}"></div>
+                    <div><label class="${LBL}">Catatan</label><textarea id="vis-catatan" rows="3" required class="${INP}"></textarea></div>
+                    ${FOOT('modal-visitasi-container')}
+                </form>`),
+
+            WRAP('modal-nilai-container', 'max-w-lg', `
+                <h3 class="font-bold text-lg text-slate-900 mb-4">Form Nilai Industri</h3>
+                <form onsubmit="window.app.db.saveNilai(event)" class="space-y-4">
+                    <div><label class="${LBL}">Siswa</label><select id="nil-siswa" required class="${INP}"></select></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Disiplin (0-100)</label><input type="number" id="nil-disiplin" min="0" max="100" required class="${INP}"></div>
+                        <div><label class="${LBL}">Teknis (0-100)</label><input type="number" id="nil-teknis" min="0" max="100" required class="${INP}"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="${LBL}">Kerjasama (0-100)</label><input type="number" id="nil-kerjasama" min="0" max="100" required class="${INP}"></div>
+                        <div><label class="${LBL}">Inisiatif (0-100)</label><input type="number" id="nil-inisiatif" min="0" max="100" required class="${INP}"></div>
+                    </div>
+                    ${FOOT('modal-nilai-container')}
+                </form>`)
+
+        ].join('');
+
+        window.addEventListener('DOMContentLoaded', () => {
+            window.app.init();
+        });
+    </script>
+</body>
+</html>
