@@ -105,12 +105,7 @@
                 <!-- Injected dynamically -->
             </nav>
 
-            <div class="p-4 border-t border-indigo-800">
-                <button onclick="window.app.auth.logout()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-800/50 hover:bg-rose-600 text-indigo-200 hover:text-white transition duration-200 text-sm font-medium">
-                    <i data-lucide="log-out" class="w-5 h-5"></i> Keluar Sistem
-                </button>
-            </div>
-        </aside>
+                    </aside>
 
         <div id="sidebar-backdrop" onclick="window.app.ui.closeSidebar()"></div>
 
@@ -121,13 +116,24 @@
                     <button id="menu-btn" onclick="window.app.ui.toggleSidebar()" class="p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Menu"><i data-lucide="menu" class="w-6 h-6"></i></button>
                     <h1 id="page-title" class="text-base lg:text-xl font-bold text-slate-800 truncate">Dashboard</h1>
                 </div>
-                <div class="flex items-center gap-3 shrink-0">
-                    <div class="text-right hidden sm:block">
-                        <p id="user-display-name" class="font-semibold text-slate-800 text-sm">Administrator</p>
-                        <p id="user-display-role" class="text-xs text-indigo-600 font-medium">Super Admin</p>
-                    </div>
-                    <div class="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold" id="user-avatar">
-                        A
+                <div class="relative shrink-0">
+                    <button id="user-menu-btn" onclick="window.app.ui.toggleUserMenu()" aria-haspopup="true" aria-expanded="false" class="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-100 text-left">
+                        <div class="text-right hidden sm:block">
+                            <p id="user-display-name" class="font-semibold text-slate-800 text-sm">Administrator</p>
+                            <p id="user-display-role" class="text-xs text-indigo-600 font-medium">Super Admin</p>
+                        </div>
+                        <div class="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold" id="user-avatar">A</div>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 hidden sm:block"></i>
+                    </button>
+                    <div id="user-menu" class="hidden absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden">
+                        <div class="px-4 py-3 border-b border-slate-100">
+                            <p id="um-nama" class="font-semibold text-slate-800 text-sm truncate"></p>
+                            <p id="um-email" class="text-xs text-slate-500 truncate"></p>
+                            <p id="um-role" class="text-xs text-indigo-600 font-medium mt-0.5"></p>
+                        </div>
+                        <button onclick="window.app.ui.closeUserMenu(); window.app.auth.openProfile()" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 text-left"><i data-lucide="user" class="w-4 h-4"></i> Profil Saya</button>
+                        <button onclick="window.app.ui.closeUserMenu(); window.app.auth.openChangePassword()" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 text-left"><i data-lucide="key-round" class="w-4 h-4"></i> Ganti Password</button>
+                        <button onclick="window.app.auth.logout()" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-rose-600 hover:bg-rose-50 text-left border-t border-slate-100"><i data-lucide="log-out" class="w-4 h-4"></i> Keluar Sistem</button>
                     </div>
                 </div>
             </header>
@@ -157,6 +163,12 @@
         }
 
         /* ================= KONSTANTA IZIN ================= */
+        // Keluar otomatis bila tidak ada aktivitas (menit). Ubah angka ini bila perlu.
+        const IDLE_LIMIT_MIN = 30;
+        const IDLE_KEY = 'simpkl_last_active';
+        const LOGIN_BOX_ERR = 'mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl';
+        const LOGIN_BOX_INFO = 'mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl';
+
         const ROLE_LABEL = {
             superadmin: 'Super Admin',
             pokja: 'Pokja PKL',
@@ -400,6 +412,14 @@
                         if(!ok) await sbClient.auth.signOut();
                     }
                 } catch(e) { console.error(e); }
+                if(!this.currentUser) {
+                    let note = null;
+                    try { note = sessionStorage.getItem('simpkl_notice'); sessionStorage.removeItem('simpkl_notice'); } catch(e) {}
+                    if(note) {
+                        const box = document.getElementById('login-error');
+                        box.className = LOGIN_BOX_INFO; box.textContent = note;
+                    }
+                }
 
                 sbClient.auth.onAuthStateChange((event) => {
                     if(event === 'SIGNED_OUT') location.reload();
@@ -413,7 +433,7 @@
                     const pass = document.getElementById('login-password').value;
                     const errBox = document.getElementById('login-error');
                     const btn = e.target.querySelector('button[type=submit]');
-                    errBox.classList.add('hidden');
+                    errBox.className = LOGIN_BOX_ERR + ' hidden';
                     btn.disabled = true;
                     btn.textContent = 'Memproses...';
                     try {
@@ -426,8 +446,8 @@
                             throw new Error('Akun Anda belum memiliki profil aktif. Hubungi admin sekolah.');
                         }
                     } catch(err) {
+                        errBox.className = LOGIN_BOX_ERR;
                         errBox.textContent = err.message;
-                        errBox.classList.remove('hidden');
                     } finally {
                         btn.disabled = false;
                         btn.textContent = 'Masuk Aplikasi';
@@ -464,6 +484,7 @@
                         app.ui.renderSidebar();
                         app.navigate('dashboard');
                         if(p.must_change_password) app.auth.promptChangePassword();
+                        app.idle.start();
                         return true;
                     } catch(e) {
                         console.error(e);
@@ -472,8 +493,56 @@
                 },
 
                 logout: async function() {
+                    window.app.idle.stop();
                     try { if(sbClient) await sbClient.auth.signOut(); } catch(e) {}
                     location.reload();
+                },
+
+                // Profil dibaca dari tabel sesuai peran. Hanya-baca; perubahan data diri lewat admin sekolah.
+                openProfile: async function() {
+                    const app = window.app, u = app.currentUser, box = document.getElementById('profil-body');
+                    const row = (k, v) => `<div class="flex gap-3 py-2 border-b border-slate-100 text-sm"><div class="w-40 shrink-0 text-slate-500">${esc(k)}</div><div class="text-slate-800 font-medium break-words min-w-0">${v === null || v === '' || v === undefined ? '-' : esc(v)}</div></div>`;
+                    box.innerHTML = '<p class="text-sm text-slate-400">Memuat profil...</p>';
+                    app.ui.openModal('modal-profil-container');
+                    let extra = '';
+                    try {
+                        if(u.role === 'siswa') {
+                            const [sw] = await q(sbClient.from('siswa').select('nis, nisn, kelas, kompetensi, hp, alamat').eq('user_id', u.id));
+                            const pen = await q(sbClient.from('penempatan').select('tgl_mulai, tgl_selesai, status, industri(nama), guru(nama)').neq('status', 'dibatalkan').order('tgl_mulai', { ascending: false }).limit(1));
+                            if(sw) extra += row('NIS', sw.nis) + row('NISN', sw.nisn) + row('Kelas', sw.kelas) + row('Konsentrasi', sw.kompetensi) + row('No. HP', sw.hp) + row('Alamat', sw.alamat);
+                            if(pen[0]) extra += row('Tempat PKL', pen[0].industri ? pen[0].industri.nama : '-') + row('Guru Pembimbing', pen[0].guru ? pen[0].guru.nama : 'Belum ditetapkan') + row('Periode PKL', fmtDate(pen[0].tgl_mulai) + ' s.d ' + fmtDate(pen[0].tgl_selesai));
+                            else extra += row('Tempat PKL', 'Belum ada penempatan');
+                        } else if(u.role === 'guru' || u.role === 'pokja') {
+                            const [g] = await q(sbClient.from('guru').select('nip, jabatan, hp, guru_kompetensi(kompetensi_keahlian(kode))').eq('user_id', u.id));
+                            if(g) extra += row('NIP', g.nip) + row('Jabatan', g.jabatan) + row('No. HP', g.hp) + row('Konsentrasi', (g.guru_kompetensi || []).map(x => x.kompetensi_keahlian && x.kompetensi_keahlian.kode).filter(Boolean).join(', '));
+                            if(u.role === 'pokja') extra += row('Konsentrasi yang dikelola', app.currentKompetensi.join(', '));
+                        } else if(u.role === 'pembimbing_lapangan') {
+                            const [pl] = await q(sbClient.from('pembimbing_lapangan').select('jabatan, hp, industri(nama, alamat, kota)').eq('user_id', u.id));
+                            if(pl) extra += row('Jabatan', pl.jabatan) + row('No. HP', pl.hp) + row('Industri', pl.industri ? pl.industri.nama : '-') + row('Alamat industri', pl.industri ? [pl.industri.alamat, pl.industri.kota].filter(Boolean).join(', ') : '-');
+                        }
+                    } catch(err) { extra = `<p class="text-sm text-rose-600 py-2">Sebagian data profil gagal dimuat: ${esc(err.message)}</p>`; }
+                    box.innerHTML = `<div class="flex items-center gap-4 mb-4"><div class="w-14 h-14 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xl">${esc((u.nama || '?').charAt(0).toUpperCase())}</div><div class="min-w-0"><p class="font-bold text-slate-900 truncate">${esc(u.nama)}</p><p class="text-xs text-indigo-600 font-medium">${esc(ROLE_LABEL[u.role] || u.role)}</p></div></div>`
+                        + row('Email', u.email) + row('Peran', ROLE_LABEL[u.role] || u.role) + extra
+                        + '<p class="text-xs text-slate-400 mt-3">Untuk mengubah data diri, hubungi admin sekolah.</p>';
+                },
+
+                openChangePassword: function() {
+                    ['cp-lama', 'cp-baru', 'cp-ulang'].forEach(id => setVal(id, ''));
+                    window.app.ui.openModal('modal-gantipw-container');
+                },
+                // Password lama diverifikasi dulu agar sesi yang terbuka di perangkat lain tidak bisa mengganti password begitu saja
+                saveChangePassword: function(e) {
+                    return submitForm(e, 'modal-gantipw-container', 'Password berhasil diganti.', null, async () => {
+                        const lama = document.getElementById('cp-lama').value, baru = document.getElementById('cp-baru').value, ulang = document.getElementById('cp-ulang').value;
+                        if(baru.length < 8) throw new Error('Password baru minimal 8 karakter.');
+                        if(baru !== ulang) throw new Error('Konfirmasi password baru tidak sama.');
+                        if(baru === lama) throw new Error('Password baru tidak boleh sama dengan password lama.');
+                        const r1 = await sbClient.auth.signInWithPassword({ email: window.app.currentUser.email, password: lama });
+                        if(r1.error) throw new Error('Password lama salah.');
+                        const r2 = await sbClient.auth.updateUser({ password: baru });
+                        if(r2.error) throw new Error(r2.error.message);
+                        ['cp-lama', 'cp-baru', 'cp-ulang'].forEach(id => setVal(id, ''));
+                    });
                 },
 
                 promptChangePassword: function() {
@@ -527,6 +596,19 @@
                     sb.classList.toggle('open', open); bd.classList.toggle('open', open);
                 },
                 closeSidebar: function() { this.toggleSidebar(false); },
+                toggleUserMenu: function() {
+                    const m = document.getElementById('user-menu');
+                    const open = m.classList.contains('hidden');
+                    m.classList.toggle('hidden', !open);
+                    document.getElementById('user-menu-btn').setAttribute('aria-expanded', String(open));
+                    if(open) lucide.createIcons();
+                },
+                closeUserMenu: function() {
+                    const m = document.getElementById('user-menu');
+                    if(m) m.classList.add('hidden');
+                    const b = document.getElementById('user-menu-btn');
+                    if(b) b.setAttribute('aria-expanded', 'false');
+                },
                 // Memberi label kolom pada sel tabel agar bisa tampil sebagai kartu di HP
                 labelTables: function() {
                     document.querySelectorAll('#main-content table, #modals-container table').forEach(t => {
@@ -550,6 +632,8 @@
                     });
                     ['main-content', 'modals-container'].forEach(id => this._obs.observe(document.getElementById(id), { childList: true, subtree: true }));
                     window.addEventListener('resize', () => { if(window.innerWidth >= 1024) this.closeSidebar(); });
+                    document.addEventListener('click', (e) => { if(!e.target.closest('#user-menu') && !e.target.closest('#user-menu-btn')) this.closeUserMenu(); });
+                    document.addEventListener('keydown', (e) => { if(e.key === 'Escape') { this.closeUserMenu(); this.closeSidebar(); } });
                 },
                 openModal: function(id) {
                     document.getElementById(id).classList.remove('hidden');
@@ -572,6 +656,9 @@
                     const role = app.currentRole;
                     document.getElementById('user-display-name').textContent = app.currentUser.nama;
                     document.getElementById('user-display-role').textContent = ROLE_LABEL[role] || role;
+                    document.getElementById('um-nama').textContent = app.currentUser.nama;
+                    document.getElementById('um-email').textContent = app.currentUser.email || '';
+                    document.getElementById('um-role').textContent = ROLE_LABEL[role] || role;
                     document.getElementById('user-display-name-m').textContent = app.currentUser.nama;
                     document.getElementById('user-display-role-m').textContent = ROLE_LABEL[role] || role;
                     document.getElementById('user-avatar').textContent = app.currentUser.nama.charAt(0).toUpperCase();
@@ -588,7 +675,7 @@
                         if(m.collapsible) {
                             const gid = 'g' + grp.replace(/\W/g, '');
                             const open = this.openGroups[gid] !== false;
-                            html += `<div class="pt-4"><button onclick="window.app.ui.toggleGroup('${gid}')" class="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider text-indigo-300 hover:text-white"><span>${grp}</span><i data-lucide="chevron-down" id="chev-${gid}" class="w-4 h-4 transition" style="${open ? '' : 'transform:rotate(-90deg)'}"></i></button><div id="grp-${gid}" class="${open ? '' : 'hidden'} space-y-1 mt-1">${groupItems.map(btn).join('')}</div></div>`;
+                            html += `<button onclick="window.app.ui.toggleGroup('${gid}')" class="w-full flex items-center justify-between gap-2 px-4 pt-4 pb-2 text-left text-xs font-semibold uppercase tracking-wider text-indigo-400 hover:text-white"><span class="whitespace-nowrap">${grp}</span><i data-lucide="chevron-down" id="chev-${gid}" class="w-4 h-4 transition" style="${open ? '' : 'transform:rotate(-90deg)'}"></i></button><div id="grp-${gid}" class="${open ? '' : 'hidden'} space-y-1">${groupItems.map(btn).join('')}</div>`;
                         } else {
                             html += `<div class="pt-4 pb-2 px-4 text-xs font-semibold uppercase tracking-wider text-indigo-400">${grp}</div>` + groupItems.map(btn).join('');
                         }
@@ -1439,6 +1526,62 @@
                         this.loadJurnalSiswa();
                     } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
                 }
+            }
+        };
+
+        /* ================= KELUAR OTOMATIS (TIDAK AKTIF) ================= */
+        window.app.idle = {
+            LIMIT: IDLE_LIMIT_MIN * 60000, WARN: 60000, timer: null, warning: false, last: Date.now(),
+            start: function() {
+                if(this.timer) return;
+                this.last = Date.now();
+                try { localStorage.setItem(IDLE_KEY, String(this.last)); } catch(e) {}
+                this._on = () => this.touch();
+                ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(ev => window.addEventListener(ev, this._on, { passive: true, capture: true }));
+                this._vis = () => { if(!document.hidden) this.tick(); };
+                document.addEventListener('visibilitychange', this._vis);
+                this.timer = setInterval(() => this.tick(), 1000);
+            },
+            stop: function() {
+                if(this.timer) clearInterval(this.timer);
+                this.timer = null; this.warning = false;
+                if(this._on) ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(ev => window.removeEventListener(ev, this._on, { capture: true }));
+                if(this._vis) document.removeEventListener('visibilitychange', this._vis);
+                this._on = null; this._vis = null;
+                const w = document.getElementById('idle-warning'); if(w) w.classList.add('hidden');
+            },
+            // Aktivitas dicatat di localStorage agar beberapa tab berbagi waktu aktif yang sama
+            touch: function() {
+                if(this.warning) return;            // saat peringatan tampil, hanya tombol yang memperpanjang sesi
+                const now = Date.now();
+                if(now - this.last < 3000) return;
+                this.last = now;
+                try { localStorage.setItem(IDLE_KEY, String(now)); } catch(e) {}
+            },
+            tick: function() {
+                let last = this.last;
+                try { const v = parseInt(localStorage.getItem(IDLE_KEY), 10); if(v > last) { last = v; this.last = v; } } catch(e) {}
+                const idle = Date.now() - last;
+                if(idle >= this.LIMIT) return this.expire();
+                if(idle >= this.LIMIT - this.WARN) this.showWarning(Math.ceil((this.LIMIT - idle) / 1000));
+                else if(this.warning) this.hideWarning();
+            },
+            showWarning: function(sec) {
+                const w = document.getElementById('idle-warning');
+                this.warning = true;
+                w.classList.remove('hidden');
+                document.getElementById('idle-sec').textContent = sec;
+            },
+            hideWarning: function() { this.warning = false; document.getElementById('idle-warning').classList.add('hidden'); },
+            stay: function() {
+                this.warning = false;
+                this.last = Date.now();
+                try { localStorage.setItem(IDLE_KEY, String(this.last)); } catch(e) {}
+                this.hideWarning();
+            },
+            expire: function() {
+                try { sessionStorage.setItem('simpkl_notice', 'Anda keluar otomatis karena tidak ada aktivitas selama ' + IDLE_LIMIT_MIN + ' menit. Silakan masuk kembali.'); } catch(e) {}
+                window.app.auth.logout();
             }
         };
 
@@ -2812,11 +2955,37 @@
                     <div><label class="${LBL}">Tanggal jawaban diterima</label><input type="date" id="jw-tanggal" required class="${INP}"></div>
                     <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-500"><th class="p-2">Siswa</th><th class="p-2">Jawaban industri</th><th class="p-2">Catatan</th></tr></thead><tbody id="jw-body"></tbody></table></div>
                     ${FOOT('modal-jawaban-container')}
+                </form>`),
+
+            WRAP('modal-profil-container', 'max-w-lg', `
+                <h3 class="font-bold text-lg text-slate-900 mb-4">Profil Saya</h3>
+                <div id="profil-body"></div>
+                <div class="flex justify-end pt-4"><button type="button" onclick="window.app.ui.closeModal('modal-profil-container')" class="px-4 py-2 bg-slate-100 rounded-xl text-sm">Tutup</button></div>`),
+
+            WRAP('modal-gantipw-container', 'max-w-md', `
+                <h3 class="font-bold text-lg text-slate-900 mb-1">Ganti Password</h3>
+                <p class="text-sm text-slate-500 mb-4">Masukkan password saat ini, lalu password baru (minimal 8 karakter).</p>
+                <form onsubmit="window.app.auth.saveChangePassword(event)" class="space-y-4">
+                    <div><label class="${LBL}">Password saat ini</label><input type="password" id="cp-lama" autocomplete="current-password" required class="${INP}"></div>
+                    <div><label class="${LBL}">Password baru</label><input type="password" id="cp-baru" minlength="8" autocomplete="new-password" required class="${INP}"></div>
+                    <div><label class="${LBL}">Ulangi password baru</label><input type="password" id="cp-ulang" minlength="8" autocomplete="new-password" required class="${INP}"></div>
+                    ${FOOT('modal-gantipw-container')}
                 </form>`)
 
         ].join('');
 
         document.body.insertAdjacentHTML('beforeend', `
+            <div id="idle-warning" class="hidden fixed inset-0 z-[70] bg-slate-900/70 flex items-center justify-center p-4">
+                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
+                    <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xl">!</div>
+                    <h3 class="font-bold text-lg text-slate-900 mb-1">Sesi akan berakhir</h3>
+                    <p class="text-sm text-slate-600 mb-5">Karena tidak ada aktivitas, Anda akan keluar otomatis dalam <b id="idle-sec">60</b> detik.</p>
+                    <div class="flex gap-3 justify-center">
+                        <button onclick="window.app.auth.logout()" class="px-4 py-2 bg-slate-100 rounded-xl text-sm">Keluar Sekarang</button>
+                        <button onclick="window.app.idle.stay()" class="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold">Tetap Masuk</button>
+                    </div>
+                </div>
+            </div>
             <style id="surat-page-style">@page{size:210mm 330mm;margin:0}</style>
             <div id="surat-overlay" class="hidden fixed inset-0 z-[60] bg-slate-700/95 overflow-y-auto">
                 <div id="surat-toolbar" class="sticky top-0 z-10 bg-slate-900 text-white px-6 py-3 flex flex-wrap items-center gap-3">
