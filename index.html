@@ -622,6 +622,189 @@
         })();
         window.SISWA4 = SISWA4;
 
+        /* ---------- Tahap 4B: rekap presensi, persetujuan izin, verifikasi jurnal (staf) ---------- */
+        const STAFF4 = (() => {
+            Object.assign(BTN_ICONS, {
+                Setujui: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+                Revisi: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+                Tinjau: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+                Bukti: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'
+            });
+            const T0 = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+            const pad = n => String(n).padStart(2, '0');
+            const dmy = d => d.split('-').reverse().join('-');
+            const jam = w => new Date(w).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+            const mRange = ym => { const [y, m] = ym.split('-').map(Number), last = new Date(Date.UTC(y, m, 0)).getUTCDate(); return { last, y, m, first: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-${pad(last)}` }; };
+            const dow = d => { const x = new Date(d + 'T00:00:00Z').getUTCDay(); return x === 0 ? 7 : x; };
+            const NAMA = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+            const isWork = (ind, d) => { const h = ind && ind.hari_kerja, w = dow(d); if(!h || !h.length) return w <= 5;
+                return h.some(e => { const s = String(e).trim().toLowerCase(); return s === NAMA[w - 1] || s === NAMA[w - 1].slice(0, 3) || s === String(w); }); };
+            const dayStatus = (d, today, pens, indMap, pr, iz) => {
+                if(d > today) return '';
+                const p = pens.find(x => d >= x.tgl_mulai && d <= x.tgl_selesai);
+                if(!p) return '-';
+                if(iz && iz.status === 'disetujui') return iz.jenis === 'sakit' ? 'S' : 'I';
+                if(pr && pr.masuk) { const k = pr.masuk.status === 'terlambat' ? 'T' : 'H'; return (pr.pulang || d === today) ? k : 'TAP'; }
+                if(!isWork(indMap[p.industri_id], d)) return 'OFF';
+                return d === today ? '-' : 'A';
+            };
+            const KL = { H:'bg-emerald-50 text-emerald-700', T:'bg-amber-50 text-amber-700', I:'bg-sky-50 text-sky-700', S:'bg-violet-50 text-violet-700', A:'bg-rose-50 text-rose-700', TAP:'bg-amber-50 text-amber-700', OFF:'bg-slate-100 text-slate-500', '-':'text-slate-400', '':'' };
+            const chip = k => `<span class="px-2 py-0.5 rounded-md text-xs font-bold ${KL[k] || ''}">${esc(k)}</span>`;
+            const ST = { submitted:['Terkirim','bg-sky-50 text-sky-700'], under_review:['Ditinjau','bg-amber-50 text-amber-700'], approved:['Disetujui','bg-emerald-50 text-emerald-700'], revision:['Perlu Revisi','bg-rose-50 text-rose-700'], draft:['Draft','bg-slate-100 text-slate-600'] };
+            const badge = k => { const s = ST[k] || [k, 'bg-slate-100 text-slate-600']; return `<span class="px-2 py-0.5 rounded-full text-xs font-semibold ${s[1]}">${esc(s[0])}</span>`; };
+            const INP = 'px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white';
+            const LBL = 'block text-xs font-semibold text-slate-500 mb-1';
+            const CARD = 'bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm';
+            const toast = (m, t) => window.app.ui.showToast(m, t);
+            const R = { sis: [], pen: [], ind: {}, list: [], names: {} };
+            const canAct = () => ['superadmin', 'pokja', 'guru'].includes(window.app.currentUser.role);
+            const nm = id => (R.names[id] ? R.names[id].nama : 'Siswa') ;
+            async function all(build) { let out = [], i = 0; for(;;) { const r = await q(build().range(i, i + 999)); out = out.concat(r); if(r.length < 1000) break; i += 1000; } return out; }
+            async function base() {
+                const [sis, pen, ind] = await Promise.all([
+                    q(sbClient.from('siswa').select('id,nama,kelas').order('nama').limit(1000)),
+                    q(sbClient.from('penempatan').select('siswa_id,industri_id,tgl_mulai,tgl_selesai,status').neq('status', 'dibatalkan').limit(2000)),
+                    q(sbClient.from('industri').select('id,nama,hari_kerja').limit(1000))]);
+                R.sis = sis; R.pen = pen; R.ind = Object.fromEntries(ind.map(i => [i.id, i]));
+                R.names = Object.fromEntries(sis.map(s => [s.id, s]));
+                const ids = [...new Set(pen.map(p => p.siswa_id))];
+                R.list = ids.map(id => R.names[id] || { id, nama: 'Siswa ' + id.slice(0, 6), kelas: '' }).sort((a, b) => a.nama.localeCompare(b.nama));
+            }
+            const opts = (sel) => `<option value="">Semua siswa</option>` + R.list.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.nama)}${s.kelas ? ' (' + esc(s.kelas) + ')' : ''}</option>`).join('');
+
+            /* ---- Rekap presensi ---- */
+            async function rekap(c) {
+                c = c || document.getElementById('main-content');
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    await base();
+                    const ym = T0().slice(0, 7);
+                    c.innerHTML = `<div class="space-y-4">
+                        <div class="${CARD} flex flex-wrap gap-3 items-end">
+                            <div><label class="${LBL}">Bulan</label><input id="rk-bln" type="month" value="${ym}" onchange="STAFF4.rekapLoad()" class="${INP}"></div>
+                            <div class="flex-1 min-w-[220px]"><label class="${LBL}">Siswa</label><select id="rk-sis" onchange="STAFF4.rekapLoad()" class="${INP} w-full">${opts('')}</select></div>
+                        </div>
+                        <div id="rk-izin"></div><div id="rk-hasil"></div></div>`;
+                    izinList(); rekapLoad();
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            async function izinList() {
+                const box = document.getElementById('rk-izin'); if(!box) return;
+                try {
+                    const z = await q(sbClient.from('pengajuan_izin').select('id,siswa_id,tanggal,jenis,alasan,bukti_path').eq('status', 'menunggu').order('tanggal').limit(100));
+                    box.innerHTML = z.length ? `<div class="${CARD}"><h4 class="font-bold text-slate-900 mb-3">Pengajuan Izin / Sakit Menunggu (${z.length})</h4><div class="space-y-2">${z.map(i => `
+                        <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-amber-50/50 text-sm">
+                            <div><b>${esc(nm(i.siswa_id))}</b> · ${dmy(i.tanggal)} · ${esc(i.jenis)}<div class="text-slate-600">${esc(i.alasan)}</div></div>
+                            <div class="flex gap-1.5">${i.bukti_path ? B('Bukti', `STAFF4.bukti('${i.bukti_path}')`) : ''}${canAct() ? B('Setujui', `STAFF4.izinPutus('${i.id}',true)`, 'emerald') + B('Tolak', `STAFF4.izinPutus('${i.id}',false)`, 'rose') : ''}</div>
+                        </div>`).join('')}</div></div>` : '';
+                } catch(err) { box.innerHTML = ''; }
+            }
+            async function bukti(path) {
+                const { data, error } = await sbClient.storage.from('bukti-izin').createSignedUrl(path, 300);
+                if(error || !data) return toast('Bukti tidak dapat dibuka: ' + (error ? error.message : ''), 'error');
+                window.open(data.signedUrl, '_blank', 'noopener');
+            }
+            async function izinPutus(id, setuju) {
+                let cat = '';
+                if(!setuju) { cat = prompt('Alasan penolakan (wajib):'); if(cat === null) return; }
+                try {
+                    const { error } = await sbClient.rpc('putuskan_izin', { p_id: id, p_setuju: setuju, p_catatan: cat });
+                    if(error) throw new Error(friendlyError(error));
+                    toast(setuju ? 'Izin disetujui.' : 'Izin ditolak.'); izinList(); rekapLoad();
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            const calc = (sid, days, today, pres, izin) => {
+                const pens = R.pen.filter(p => p.siswa_id === sid), rows = [], sum = { H: 0, T: 0, I: 0, S: 0, A: 0, TAP: 0 };
+                days.forEach(d => {
+                    const pr = pres[sid + '|' + d], iz = izin[sid + '|' + d];
+                    const k = dayStatus(d, today, pens, R.ind, pr, iz);
+                    if(sum[k] !== undefined) sum[k]++;
+                    rows.push({ d, k, pr });
+                });
+                return { rows, sum };
+            };
+            async function rekapLoad() {
+                const out = document.getElementById('rk-hasil'); if(!out) return;
+                const ym = document.getElementById('rk-bln').value, sid = document.getElementById('rk-sis').value;
+                if(!ym) { out.innerHTML = ''; return; }
+                out.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const mr = mRange(ym), today = T0();
+                    const days = Array.from({ length: mr.last }, (_, i) => `${mr.y}-${pad(mr.m)}-${pad(i + 1)}`);
+                    const f = b => sid ? b.eq('siswa_id', sid) : b;
+                    const [pr, iz] = await Promise.all([
+                        all(() => f(sbClient.from('presensi').select('siswa_id,tanggal,jenis,waktu,status').gte('tanggal', mr.first).lte('tanggal', mr.end)).order('tanggal')),
+                        all(() => f(sbClient.from('pengajuan_izin').select('siswa_id,tanggal,jenis,status').gte('tanggal', mr.first).lte('tanggal', mr.end)).order('tanggal'))]);
+                    const pres = {}, izin = {};
+                    pr.forEach(r => { (pres[r.siswa_id + '|' + r.tanggal] = pres[r.siswa_id + '|' + r.tanggal] || {})[r.jenis] = r; });
+                    iz.filter(z => z.status !== 'ditolak').forEach(z => { izin[z.siswa_id + '|' + z.tanggal] = z; });
+                    const sumHtml = s => ['H', 'T', 'I', 'S', 'A', 'TAP'].map(k => `<span class="inline-flex items-center gap-1 mr-2">${chip(k)}<b>${s[k]}</b></span>`).join('');
+                    if(sid) {
+                        const r = calc(sid, days, today, pres, izin);
+                        out.innerHTML = `<div class="${CARD}"><div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-900">Rekap Presensi — ${esc(nm(sid))}</h4><div class="text-sm">${sumHtml(r.sum)}</div></div>
+                            <div class="overflow-x-auto"><table class="w-full text-sm text-center"><thead><tr class="bg-slate-50 text-slate-500 font-semibold"><th class="p-3 text-left">Tanggal</th><th class="p-3">Masuk</th><th class="p-3">Pulang</th><th class="p-3">Status</th></tr></thead><tbody>
+                            ${r.rows.map(x => `<tr class="border-b border-slate-100 ${x.k === 'OFF' ? 'bg-slate-50' : ''}"><td class="p-3 text-left">${dmy(x.d)}</td><td class="p-3">${x.pr && x.pr.masuk ? jam(x.pr.masuk.waktu) : '-'}</td><td class="p-3">${x.pr && x.pr.pulang ? jam(x.pr.pulang.waktu) : '-'}</td><td class="p-3">${chip(x.k)}</td></tr>`).join('')}
+                            </tbody></table></div>
+                            <p class="text-xs text-slate-400 mt-3">H hadir · T terlambat · I izin · S sakit · A alpa · TAP tidak presensi pulang · OFF bukan hari kerja</p></div>`;
+                    } else {
+                        const rows = R.list.map(s => ({ s, r: calc(s.id, days, today, pres, izin) }));
+                        out.innerHTML = `<div class="${CARD}"><h4 class="font-bold text-slate-900 mb-3">Ringkasan Presensi Bulan ${mr.m}/${mr.y}</h4><div class="overflow-x-auto"><table class="w-full text-sm text-center"><thead><tr class="bg-slate-50 text-slate-500 font-semibold"><th class="p-3 text-left">Siswa</th>${['H', 'T', 'I', 'S', 'A', 'TAP'].map(k => `<th class="p-3">${k}</th>`).join('')}</tr></thead><tbody>
+                            ${rows.map(x => `<tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="STAFF4.pilih('${x.s.id}')"><td class="p-3 text-left"><b>${esc(x.s.nama)}</b><div class="text-xs text-slate-500">${esc(x.s.kelas || '')}</div></td>${['H', 'T', 'I', 'S', 'A', 'TAP'].map(k => `<td class="p-3">${x.r.sum[k] || '-'}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="7" class="p-6 text-slate-400">Belum ada siswa dengan penempatan.</td></tr>'}
+                            </tbody></table></div><p class="text-xs text-slate-400 mt-3">Klik nama siswa untuk melihat rekap harian.</p></div>`;
+                    }
+                } catch(err) { out.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            const pilih = id => { document.getElementById('rk-sis').value = id; rekapLoad(); };
+
+            /* ---- Jurnal kegiatan (verifikasi) ---- */
+            let jRows = [];
+            async function jurnal(c) {
+                c = c || document.getElementById('main-content');
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    await base();
+                    c.innerHTML = `<div class="space-y-4"><div class="${CARD} flex flex-wrap gap-3 items-end">
+                        <div><label class="${LBL}">Bulan</label><input id="jv-bln" type="month" onchange="STAFF4.jurnalLoad()" class="${INP}"></div>
+                        <div class="flex-1 min-w-[200px]"><label class="${LBL}">Siswa</label><select id="jv-sis" onchange="STAFF4.jurnalLoad()" class="${INP} w-full">${opts('')}</select></div>
+                        <div><label class="${LBL}">Status</label><select id="jv-st" onchange="STAFF4.jurnalLoad()" class="${INP}"><option value="perlu">Perlu ditinjau</option><option value="revision">Perlu revisi</option><option value="approved">Disetujui</option><option value="semua">Semua (tanpa draft)</option></select></div>
+                        </div><div id="jv-hasil"></div></div>`;
+                    jurnalLoad();
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            async function jurnalLoad() {
+                const out = document.getElementById('jv-hasil'); if(!out) return;
+                const ym = document.getElementById('jv-bln').value, sid = document.getElementById('jv-sis').value, st = document.getElementById('jv-st').value;
+                out.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    let b = sbClient.from('jurnal_kegiatan').select('*').order('tanggal', { ascending: false }).limit(300);
+                    if(ym) { const mr = mRange(ym); b = b.gte('tanggal', mr.first).lte('tanggal', mr.end); }
+                    if(sid) b = b.eq('siswa_id', sid);
+                    b = st === 'perlu' ? b.in('status', ['submitted', 'under_review']) : st === 'semua' ? b.neq('status', 'draft') : b.eq('status', st);
+                    jRows = await q(b);
+                    const act = canAct();
+                    out.innerHTML = jRows.length ? `<div class="space-y-3">${jRows.map(j => `<div class="${CARD}">
+                        <div class="flex flex-wrap items-start justify-between gap-2"><div><b>${esc(nm(j.siswa_id))}</b> <span class="text-slate-500 text-sm">· ${dmy(j.tanggal)} · ${(j.jam_mulai || '').slice(0, 5)}–${(j.jam_selesai || '').slice(0, 5)}</span></div>${badge(j.status)}</div>
+                        <div class="mt-2 text-sm text-slate-800 whitespace-pre-line">${esc(j.uraian)}</div>
+                        ${[['Hal baru', j.hal_baru], ['Kendala', j.kendala], ['Solusi', j.solusi], ['Tindak lanjut', j.tindak_lanjut]].filter(x => x[1]).map(x => `<div class="mt-1 text-xs text-slate-600"><b>${x[0]}:</b> ${esc(x[1])}</div>`).join('')}
+                        ${j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan: ${esc(j.catatan_guru)}</div>` : ''}
+                        ${act && ['submitted', 'under_review'].includes(j.status) ? `<div class="mt-3 flex gap-1.5">${j.status === 'submitted' ? B('Tinjau', `STAFF4.verif('${j.id}','under_review')`, 'amber') : ''}${B('Setujui', `STAFF4.verif('${j.id}','approved')`, 'emerald')}${B('Revisi', `STAFF4.verif('${j.id}','revision')`, 'rose')}</div>` : ''}
+                        </div>`).join('')}</div>` : `<div class="${CARD} text-sm text-slate-400">Tidak ada jurnal pada filter ini.</div>`;
+                } catch(err) { out.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            async function verif(id, status) {
+                let cat = '';
+                if(status === 'revision') { cat = prompt('Catatan revisi untuk siswa (wajib):'); if(cat === null) return; }
+                try {
+                    const { error } = await sbClient.rpc('verifikasi_jurnal', { p_id: id, p_status: status, p_catatan: cat });
+                    if(error) throw new Error(friendlyError(error));
+                    toast({ approved: 'Jurnal disetujui.', revision: 'Jurnal dikembalikan untuk revisi.', under_review: 'Jurnal ditandai sedang ditinjau.' }[status]);
+                    jurnalLoad();
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            return { rekap, rekapLoad, pilih, izinPutus, bukti, jurnal, jurnalLoad, verif, _dayStatus: dayStatus, _setR: o => Object.assign(R, o) };
+        })();
+        window.STAFF4 = STAFF4;
+
         const statusBadge = (aktif) => aktif === false
             ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
             : '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs">Aktif</span>';
@@ -1064,8 +1247,8 @@
                 else if(view === 'usulan-industri') this.list.show('usulanIndustri', main);
                 else if(view === 'usulan-saya') this.views.renderUsulanSaya(main);
                 else if(view === 'surat-pengaturan') this.views.renderSuratPengaturan(main);
-                else if(view === 'presensi') this.views.renderPresensi(main);
-                else if(view === 'jurnal') this.views.renderJurnal(main);
+                else if(view === 'presensi') STAFF4.rekap(main);
+                else if(view === 'jurnal') STAFF4.jurnal(main);
                 else if(view === 'visitasi') this.views.renderVisitasi(main);
                 else if(view === 'penilaian') this.views.renderPenilaian(main);
                 else if(view === 'presensi-siswa') this.views.renderPresensiSiswa(main);
