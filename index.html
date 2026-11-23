@@ -428,7 +428,12 @@
             slate: 'bg-slate-100 text-slate-700', indigo: 'bg-indigo-50 text-indigo-700',
             rose: 'bg-rose-50 text-rose-700', amber: 'bg-amber-50 text-amber-700', emerald: 'bg-emerald-50 text-emerald-700'
         };
-        const B = (label, js, tone = 'slate') => `<button onclick="${js}" class="px-3 py-1 ${BTN_TONE[tone]} rounded-lg text-xs font-semibold">${label}</button>`;
+        const BTN_ICONS = {"Ubah": "<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\"/><path d=\"m15 5 4 4\"/>", "Hapus": "<path d=\"M3 6h18\"/><path d=\"M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6\"/><path d=\"M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2\"/><line x1=\"10\" x2=\"10\" y1=\"11\" y2=\"17\"/><line x1=\"14\" x2=\"14\" y1=\"11\" y2=\"17\"/>", "Buat Surat": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M9 15h6\"/><path d=\"M12 18v-6\"/>", "Buat Surat Tugas": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/>", "Reset PW": "<path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/><circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>", "Lihat / Cetak": "<path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/><path d=\"M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\" rx=\"1\"/>", "Tolak": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m15 9-6 6\"/><path d=\"m9 9 6 6\"/>", "Proses": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/>", "Lihat Pengajuan": "<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>", "Ke Penempatan": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M8 12h8\"/><path d=\"m12 16 4-4-4-4\"/>", "Catat Jawaban": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"m9 14 2 2 4-4\"/>", "Buat Akun PL": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><line x1=\"19\" x2=\"19\" y1=\"8\" y2=\"14\"/><line x1=\"22\" x2=\"16\" y1=\"11\" y2=\"11\"/>", "Reset PW PL": "<path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/><circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>"};
+        const B = (label, js, tone = 'slate') => {
+            const ic = BTN_ICONS[label];
+            if(!ic) return `<button onclick="${js}" class="px-3 py-1 ${BTN_TONE[tone]} rounded-lg text-xs font-semibold">${label}</button>`;
+            return `<button onclick="${js}" title="${label}" aria-label="${label}" class="inline-flex items-center justify-center w-8 h-8 ${BTN_TONE[tone]} rounded-lg hover:brightness-95 transition"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg></button>`;
+        };
         const actions = (...btns) => `<div class="flex flex-wrap gap-1.5">${btns.filter(Boolean).join('')}</div>`;
         const statusBadge = (aktif) => aktif === false
             ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
@@ -2064,7 +2069,9 @@
             <td style="text-align:center;vertical-align:middle;line-height:1.25">
                 <div style="font-size:10pt">${esc(set.instansi_1)}</div>
                 <div style="font-size:12pt;font-weight:bold">${esc(set.instansi_2)}</div>
-                <div style="font-size:13pt;font-weight:bold">${esc(set.nama_sekolah)}</div>
+                ${(() => { const m = String(set.nama_sekolah || '').match(/^(.*\S)\s+(GOMBONG)$/i);
+                    return m ? `<div style="font-size:13pt;font-weight:bold">${esc(m[1])}</div><div style="font-size:13pt;font-weight:bold">${esc(m[2])}</div>`
+                             : `<div style="font-size:13pt;font-weight:bold">${esc(set.nama_sekolah)}</div>`; })()}
                 <div style="font-size:8.5pt">${esc(set.alamat_kop)}</div>
                 <div style="font-size:8.5pt">${esc(set.kontak_kop)}</div>
             </td>
