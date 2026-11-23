@@ -435,6 +435,193 @@
             return `<button onclick="${js}" title="${label}" aria-label="${label}" class="inline-flex items-center justify-center w-8 h-8 ${BTN_TONE[tone]} rounded-lg hover:brightness-95 transition"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg></button>`;
         };
         const actions = (...btns) => `<div class="flex flex-wrap gap-1.5">${btns.filter(Boolean).join('')}</div>`;
+        /* ---------- Tahap 4A: halaman siswa (presensi GPS, izin/sakit, jurnal) ---------- */
+        const SISWA4 = (() => {
+            const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+            const toast = (m, t) => window.app.ui.showToast(m, t);
+            const main = () => document.getElementById('main-content');
+            const INP = 'w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm';
+            const LBL = 'block text-xs font-semibold text-slate-500 mb-1';
+            const CARD = 'bg-white p-5 sm:p-8 rounded-2xl border border-slate-100 shadow-sm';
+            const ST = { draft:['Draft','bg-slate-100 text-slate-600'], submitted:['Terkirim','bg-sky-50 text-sky-700'],
+                under_review:['Ditinjau','bg-amber-50 text-amber-700'], approved:['Disetujui','bg-emerald-50 text-emerald-700'],
+                revision:['Perlu Revisi','bg-rose-50 text-rose-700'], menunggu:['Menunggu','bg-amber-50 text-amber-700'],
+                disetujui:['Disetujui','bg-emerald-50 text-emerald-700'], ditolak:['Ditolak','bg-rose-50 text-rose-700'],
+                hadir:['Hadir','bg-emerald-50 text-emerald-700'], terlambat:['Terlambat','bg-amber-50 text-amber-700'] };
+            const badge = k => { const s = ST[k] || [k, 'bg-slate-100 text-slate-600']; return `<span class="px-2 py-0.5 rounded-full text-xs font-semibold ${s[1]}">${esc(s[0])}</span>`; };
+            const tgl = d => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+            const jam = w => new Date(w).toLocaleTimeString('id-ID', { timeZone:'Asia/Jakarta', hour:'2-digit', minute:'2-digit' });
+            let jRows = [], jEditId = null, ctxCache = null;
+
+            async function ctx() {
+                const sis = await q(sbClient.from('siswa').select('id,nama').limit(1));
+                if(!sis[0]) throw new Error('Data siswa untuk akun ini tidak ditemukan.');
+                const pen = await q(sbClient.from('penempatan').select('id,industri_id,tgl_mulai,tgl_selesai').eq('siswa_id', sis[0].id).eq('status', 'aktif').order('tgl_mulai').limit(1));
+                let ind = null;
+                if(pen[0]) ind = (await q(sbClient.from('industri').select('id,nama,radius').eq('id', pen[0].industri_id).limit(1)))[0] || null;
+                return (ctxCache = { sid: sis[0].id, pen: pen[0] || null, ind });
+            }
+            async function upload(bucket, sid, file, prefix) {
+                if(!file) return null;
+                if(file.size > 5 * 1024 * 1024) throw new Error('Ukuran berkas maksimal 5 MB.');
+                const ext = ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5)) || 'jpg';
+                const path = `${sid}/${prefix}-${Date.now()}.${ext}`;
+                const { error } = await sbClient.storage.from(bucket).upload(path, file, { contentType: file.type || undefined });
+                if(error) throw new Error('Gagal mengunggah berkas: ' + error.message);
+                return path;
+            }
+            const gps = () => new Promise((ok, no) => {
+                if(!navigator.geolocation) return no(new Error('Peramban tidak mendukung GPS.'));
+                navigator.geolocation.getCurrentPosition(p => ok(p.coords),
+                    e => no(new Error(e.code === 1 ? 'Izin lokasi ditolak. Aktifkan izin lokasi pada peramban.' : 'Lokasi belum dapat diperoleh. Coba lagi di tempat terbuka.')),
+                    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+            });
+            const noPen = () => `<div class="${CARD} max-w-xl mx-auto text-sm text-slate-600">Anda belum memiliki penempatan PKL yang aktif. Presensi dan jurnal baru dapat digunakan setelah industri menerima Anda dan penempatan dibuat oleh Pokja PKL.</div>`;
+
+            async function presensi(c) {
+                c = c || main();
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const x = await ctx();
+                    if(!x.pen) { c.innerHTML = noPen(); return; }
+                    const [rows, izin] = await Promise.all([
+                        q(sbClient.from('presensi').select('tanggal,jenis,waktu,status,telat_menit').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).order('waktu', { ascending:false }).limit(40)),
+                        q(sbClient.from('pengajuan_izin').select('tanggal,jenis,alasan,status,catatan_keputusan').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).limit(10))]);
+                    const t = today(), m = rows.find(r => r.tanggal === t && r.jenis === 'masuk'), p = rows.find(r => r.tanggal === t && r.jenis === 'pulang');
+                    const byDay = {}; rows.forEach(r => { (byDay[r.tanggal] = byDay[r.tanggal] || {})[r.jenis] = r; });
+                    c.innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
+                        <div class="${CARD}">
+                            <h3 class="text-lg font-bold text-slate-900">Presensi GPS</h3>
+                            <p class="text-sm text-slate-500 mb-4">${esc(x.ind ? x.ind.nama : 'Industri')} · batas radius ${esc(String(x.ind && x.ind.radius || 100))} m</p>
+                            <div class="grid grid-cols-2 gap-3 mb-4 text-sm">
+                                <div class="p-3 rounded-xl bg-slate-50"><div class="text-xs text-slate-500">Masuk hari ini</div><div class="font-bold">${m ? jam(m.waktu) : '-'} ${m ? badge(m.status) : ''}</div></div>
+                                <div class="p-3 rounded-xl bg-slate-50"><div class="text-xs text-slate-500">Pulang hari ini</div><div class="font-bold">${p ? jam(p.waktu) : '-'}</div></div>
+                            </div>
+                            <div id="pr-status" class="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-sm text-slate-600">Tekan tombol untuk mengambil lokasi GPS Anda.</div>
+                            <label class="${LBL}">Foto selfie (opsional)</label>
+                            <input id="pr-foto" type="file" accept="image/*" capture="user" class="${INP} mb-4">
+                            <div class="grid grid-cols-2 gap-3">
+                                <button id="pr-masuk" ${m ? 'disabled' : ''} onclick="SISWA4.catat('masuk')" class="py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm disabled:opacity-40">Presensi Masuk</button>
+                                <button id="pr-pulang" ${!m || p ? 'disabled' : ''} onclick="SISWA4.catat('pulang')" class="py-3 bg-rose-600 text-white font-semibold rounded-xl text-sm disabled:opacity-40">Presensi Pulang</button>
+                            </div>
+                        </div>
+                        <div class="${CARD}">
+                            <h4 class="font-bold text-slate-900 mb-3">Ajukan Izin / Sakit</h4>
+                            <form onsubmit="SISWA4.izin(event)" class="space-y-3">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div><label class="${LBL}">Tanggal</label><input id="iz-tgl" type="date" min="${t}" value="${t}" required class="${INP}"></div>
+                                    <div><label class="${LBL}">Jenis</label><select id="iz-jenis" class="${INP}"><option value="izin">Izin</option><option value="sakit">Sakit</option></select></div>
+                                </div>
+                                <div><label class="${LBL}">Alasan</label><textarea id="iz-alasan" rows="2" required class="${INP}"></textarea></div>
+                                <div><label class="${LBL}">Bukti (opsional, foto/surat, maks 5 MB)</label><input id="iz-bukti" type="file" accept="image/*,application/pdf" class="${INP}"></div>
+                                <button id="iz-btn" type="submit" class="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim Pengajuan</button>
+                            </form>
+                            <div class="mt-4 space-y-2">${izin.map(z => `<div class="text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(z.tanggal)}</b> · ${esc(z.jenis)} ${badge(z.status)}<div class="text-slate-500">${esc(z.alasan)}</div>${z.catatan_keputusan ? `<div class="text-xs text-slate-500">Catatan guru: ${esc(z.catatan_keputusan)}</div>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada pengajuan.</div>'}</div>
+                        </div>
+                        <div class="${CARD}">
+                            <h4 class="font-bold text-slate-900 mb-3">Rekap Presensi Terakhir</h4>
+                            <div class="space-y-2">${Object.keys(byDay).sort().reverse().map(d => { const e = byDay[d]; return `<div class="flex flex-wrap items-center justify-between gap-2 text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(d)}</b><span>Masuk ${e.masuk ? jam(e.masuk.waktu) : '-'} ${e.masuk ? badge(e.masuk.status) : ''}${e.masuk && e.masuk.telat_menit ? ` <span class="text-xs text-amber-700">(+${e.masuk.telat_menit} mnt)</span>` : ''} · Pulang ${e.pulang ? jam(e.pulang.waktu) : '-'}</span></div>`; }).join('') || '<div class="text-sm text-slate-400">Belum ada presensi.</div>'}</div>
+                        </div></div>`;
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+
+            async function catat(jenis) {
+                const st = document.getElementById('pr-status'), bs = ['pr-masuk', 'pr-pulang'].map(i => document.getElementById(i));
+                bs.forEach(b => b.disabled = true);
+                try {
+                    st.textContent = 'Mengambil lokasi GPS...';
+                    const pos = await gps();
+                    st.textContent = 'Mengirim presensi...';
+                    const x = ctxCache || await ctx();
+                    const file = document.getElementById('pr-foto').files[0];
+                    const foto = await upload('presensi-foto', x.sid, file, `${today()}-${jenis}`);
+                    const { data, error } = await sbClient.rpc('presensi_catat', { p_jenis: jenis, p_lat: pos.latitude, p_lng: pos.longitude, p_akurasi: pos.accuracy, p_foto_path: foto });
+                    if(error) throw new Error(friendlyError(error));
+                    toast(`Presensi ${jenis} tercatat (${data.jarak_m} m dari industri${data.telat_menit ? ', terlambat ' + data.telat_menit + ' menit' : ''}).`);
+                    presensi();
+                } catch(err) {
+                    st.textContent = err.message; toast(err.message, 'error');
+                    presensi().then(() => { const s2 = document.getElementById('pr-status'); if(s2) s2.textContent = err.message; });
+                }
+            }
+
+            async function izin(ev) {
+                ev.preventDefault();
+                const btn = document.getElementById('iz-btn'); btn.disabled = true;
+                try {
+                    const x = ctxCache || await ctx();
+                    const bukti = await upload('bukti-izin', x.sid, document.getElementById('iz-bukti').files[0], 'izin');
+                    const { error } = await sbClient.rpc('ajukan_izin', { p_tanggal: document.getElementById('iz-tgl').value, p_jenis: document.getElementById('iz-jenis').value, p_alasan: document.getElementById('iz-alasan').value, p_bukti_path: bukti });
+                    if(error) throw new Error(friendlyError(error));
+                    toast('Pengajuan terkirim. Menunggu persetujuan guru pembimbing.');
+                    presensi();
+                } catch(err) { toast(err.message, 'error'); btn.disabled = false; }
+            }
+
+            async function jurnal(c) {
+                c = c || main(); jEditId = null;
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const x = await ctx();
+                    if(!x.pen) { c.innerHTML = noPen(); return; }
+                    jRows = await q(sbClient.from('jurnal_kegiatan').select('*').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).limit(60));
+                    const t = today(), ta = (id, l, r) => `<div><label class="${LBL}">${l}</label><textarea id="${id}" rows="${r}" class="${INP}"></textarea></div>`;
+                    c.innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
+                        <div class="${CARD}">
+                            <h3 id="jn-judul" class="text-lg font-bold text-slate-900 mb-4">Jurnal Harian PKL</h3>
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div><label class="${LBL}">Tanggal</label><input id="jn-tgl" type="date" min="${x.pen.tgl_mulai}" max="${t < x.pen.tgl_selesai ? t : x.pen.tgl_selesai}" value="${t}" class="${INP}"></div>
+                                    <div><label class="${LBL}">Jam mulai</label><input id="jn-mulai" type="time" value="07:30" class="${INP}"></div>
+                                    <div><label class="${LBL}">Jam selesai</label><input id="jn-selesai" type="time" value="15:30" class="${INP}"></div>
+                                </div>
+                                ${ta('jn-uraian', 'Uraian kegiatan', 4)}${ta('jn-baru', 'Hal baru yang dipelajari', 2)}${ta('jn-kendala', 'Kendala', 2)}${ta('jn-solusi', 'Solusi', 2)}${ta('jn-tl', 'Tindak lanjut', 2)}
+                                <div class="flex flex-wrap gap-2">
+                                    <button onclick="SISWA4.simpan(false)" class="px-5 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-xl text-sm">Simpan Draft</button>
+                                    <button onclick="SISWA4.simpan(true)" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim ke Guru</button>
+                                    <button id="jn-batal" onclick="SISWA4.jurnal()" class="hidden px-5 py-2.5 text-slate-500 text-sm">Batal ubah</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="${CARD}"><h4 class="font-bold text-slate-900 mb-3">Riwayat Jurnal</h4><div class="space-y-3">
+                            ${jRows.map(j => `<div class="p-4 rounded-xl bg-slate-50 text-sm"><div class="flex flex-wrap items-center justify-between gap-2"><b>${tgl(j.tanggal)}</b>${badge(j.status)}</div><div class="mt-1 text-slate-700 whitespace-pre-line">${esc(j.uraian)}</div>${j.status === 'revision' && j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan guru: ${esc(j.catatan_guru)}</div>` : ''}${['draft', 'revision'].includes(j.status) ? `<button onclick="SISWA4.ubah('${j.id}')" class="mt-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">Ubah</button>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada jurnal.</div>'}
+                        </div></div></div>`;
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+
+            function ubah(id) {
+                const j = jRows.find(r => r.id === id); if(!j) return;
+                jEditId = id;
+                const set = (k, v) => { document.getElementById(k).value = v || ''; };
+                set('jn-tgl', j.tanggal); set('jn-mulai', (j.jam_mulai || '').slice(0, 5)); set('jn-selesai', (j.jam_selesai || '').slice(0, 5));
+                set('jn-uraian', j.uraian); set('jn-baru', j.hal_baru); set('jn-kendala', j.kendala); set('jn-solusi', j.solusi); set('jn-tl', j.tindak_lanjut);
+                document.getElementById('jn-tgl').disabled = true;
+                document.getElementById('jn-judul').textContent = 'Ubah Jurnal ' + tgl(j.tanggal);
+                document.getElementById('jn-batal').classList.remove('hidden');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+
+            async function simpan(kirim) {
+                const v = id => document.getElementById(id).value.trim();
+                try {
+                    if(v('jn-uraian').length < 5) throw new Error('Uraian kegiatan minimal 5 karakter.');
+                    if(v('jn-mulai') && v('jn-selesai') && v('jn-selesai') <= v('jn-mulai')) throw new Error('Jam selesai harus setelah jam mulai.');
+                    const x = ctxCache || await ctx();
+                    const payload = { jam_mulai: v('jn-mulai') || null, jam_selesai: v('jn-selesai') || null, uraian: v('jn-uraian'),
+                        hal_baru: v('jn-baru') || null, kendala: v('jn-kendala') || null, solusi: v('jn-solusi') || null, tindak_lanjut: v('jn-tl') || null,
+                        status: kirim ? 'submitted' : 'draft' };
+                    if(jEditId) await writeRow('jurnal_kegiatan', jEditId, payload);
+                    else await writeRow('jurnal_kegiatan', null, { ...payload, tanggal: v('jn-tgl'), siswa_id: x.sid, penempatan_id: x.pen.id });
+                    toast(kirim ? 'Jurnal terkirim ke guru pembimbing.' : 'Draft jurnal tersimpan.');
+                    jurnal();
+                } catch(err) {
+                    toast(/duplicate|unique|duplikat|sudah ada/i.test(err.message) ? 'Jurnal untuk tanggal ini sudah ada. Ubah dari riwayat.' : err.message, 'error');
+                }
+            }
+            return { presensi, catat, izin, jurnal, ubah, simpan };
+        })();
+        window.SISWA4 = SISWA4;
+
         const statusBadge = (aktif) => aktif === false
             ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
             : '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs">Aktif</span>';
@@ -1463,43 +1650,9 @@
                     window.app.db.loadPenilaian();
                 },
 
-                renderPresensiSiswa: function(container) {
-                    container.innerHTML = `
-                        <div class="max-w-xl mx-auto bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
-                            <h3 class="text-xl font-bold text-slate-900 mb-2">Presensi GPS Siswa</h3>
-                            <div id="gps-status-box" class="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6 text-sm text-slate-700">Memuat lokasi GPS...</div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <button onclick="window.app.db.submitPresensi('Masuk')" class="py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm">Presensi Masuk</button>
-                                <button onclick="window.app.db.submitPresensi('Pulang')" class="py-3 bg-rose-600 text-white font-semibold rounded-xl text-sm">Presensi Pulang</button>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.initGPSCheck();
-                },
+                renderPresensiSiswa: function(container) { SISWA4.presensi(container); },
 
-                renderJurnalSiswa: function(container) {
-                    container.innerHTML = `
-                        <div class="max-w-3xl mx-auto space-y-6">
-                            <div class="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
-                                <h3 class="text-xl font-bold text-slate-900 mb-4">Buat Jurnal Harian PKL</h3>
-                                <form onsubmit="window.app.db.saveJurnalSiswa(event)" class="space-y-4">
-                                    <div class="grid grid-cols-3 gap-4">
-                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Tanggal</label><input type="date" id="j-tgl" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
-                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Jam Mulai</label><input type="time" id="j-mulai" value="07:30" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
-                                        <div><label class="block text-xs font-semibold text-slate-500 mb-1">Jam Selesai</label><input type="time" id="j-selesai" value="15:30" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></div>
-                                    </div>
-                                    <div><label class="block text-xs font-semibold text-slate-500 mb-1">Uraian Pekerjaan</label><textarea id="j-uraian" rows="3" required class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm"></textarea></div>
-                                    <button type="submit" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim Jurnal</button>
-                                </form>
-                            </div>
-                            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                                <h4 class="font-bold text-slate-900 mb-4">Riwayat Jurnal</h4>
-                                <div id="riwayat-jurnal-siswa" class="space-y-3">Memuat riwayat...</div>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.loadJurnalSiswa();
-                }
+                renderJurnalSiswa: function(container) { SISWA4.jurnal(container); },
             },
 
             db: {
