@@ -50,6 +50,8 @@
             #surat-toolbar{padding:8px 12px !important;gap:8px !important}
             #surat-toolbar button{padding:8px 10px !important;font-size:12px !important}
         }
+            #sidebar-menu{scrollbar-width:none;-ms-overflow-style:none}
+        #sidebar-menu::-webkit-scrollbar{display:none}
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
@@ -291,12 +293,12 @@
 
         const MENU = [
             { id:'dashboard', label:'Dashboard', icon:'layout-dashboard', group:null },
-            { id:'tapel', label:'Tahun Pelajaran', icon:'calendar', group:'Data Master' },
-            { id:'industri', label:'Data Industri', icon:'building-2', group:'Data Master' },
-            { id:'usulan-industri', label:'Usulan Industri', icon:'inbox', group:'Data Master' },
-            { id:'guru', label:'Data Guru', icon:'users', group:'Data Master' },
-            { id:'siswa', label:'Data Siswa', icon:'graduation-cap', group:'Data Master' },
-            { id:'penempatan', label:'Penempatan PKL', icon:'map-pin', group:'Data Master' },
+            { id:'tapel', label:'Tahun Pelajaran', icon:'calendar', group:'Data Master', collapsible:true },
+            { id:'industri', label:'Data Industri', icon:'building-2', group:'Data Master', collapsible:true },
+            { id:'usulan-industri', label:'Usulan Industri', icon:'inbox', group:'Data Master', collapsible:true },
+            { id:'guru', label:'Data Guru', icon:'users', group:'Data Master', collapsible:true },
+            { id:'siswa', label:'Data Siswa', icon:'graduation-cap', group:'Data Master', collapsible:true },
+            { id:'penempatan', label:'Penempatan PKL', icon:'map-pin', group:'Data Master', collapsible:true },
             { id:'surat-industri', label:'Surat ke Industri', icon:'send', group:'Manajemen Persuratan', collapsible:true },
             { id:'surat-monitoring', label:'Surat Tugas Monitoring', icon:'clipboard-list', group:'Manajemen Persuratan', collapsible:true },
             { id:'surat-pembimbing', label:'Surat Tugas Pembimbing', icon:'user-check', group:'Manajemen Persuratan', collapsible:true },
@@ -304,13 +306,13 @@
             { id:'surat-ortu', label:'Surat ke Ortu', icon:'mail', group:'Manajemen Persuratan', collapsible:true },
             { id:'surat-arsip', label:'Arsip Surat', icon:'archive', group:'Manajemen Persuratan', collapsible:true },
             { id:'surat-pengaturan', label:'Pengaturan Surat', icon:'settings', group:'Manajemen Persuratan', collapsible:true },
-            { id:'usulan-saya', label:'Usulan Tempat PKL', icon:'lightbulb', group:'Kegiatan PKL' },
-            { id:'presensi-siswa', label:'Presensi GPS', icon:'map-pin', group:'Kegiatan PKL' },
-            { id:'presensi', label:'Rekap Presensi', icon:'clock', group:'Kegiatan PKL' },
-            { id:'jurnal-siswa', label:'Jurnal Harian', icon:'book-open', group:'Kegiatan PKL' },
-            { id:'jurnal', label:'Jurnal Kegiatan', icon:'book-open', group:'Kegiatan PKL', alt:{ guru:'Verifikasi Jurnal' } },
-            { id:'visitasi', label:'Monitoring & Visitasi', icon:'eye', group:'Kegiatan PKL' },
-            { id:'penilaian', label:'Penilaian Industri', icon:'award', group:'Kegiatan PKL', alt:{ pembimbing_lapangan:'Nilai & Rekap Akhir' } }
+            { id:'usulan-saya', label:'Usulan Tempat PKL', icon:'lightbulb', group:'Kegiatan PKL', collapsible:true },
+            { id:'presensi-siswa', label:'Presensi GPS', icon:'map-pin', group:'Kegiatan PKL', collapsible:true },
+            { id:'presensi', label:'Rekap Presensi', icon:'clock', group:'Kegiatan PKL', collapsible:true },
+            { id:'jurnal-siswa', label:'Jurnal Harian', icon:'book-open', group:'Kegiatan PKL', collapsible:true },
+            { id:'jurnal', label:'Jurnal Kegiatan', icon:'book-open', group:'Kegiatan PKL', alt:{ guru:'Verifikasi Jurnal' }, collapsible:true },
+            { id:'visitasi', label:'Monitoring & Visitasi', icon:'eye', group:'Kegiatan PKL', collapsible:true },
+            { id:'penilaian', label:'Penilaian Industri', icon:'award', group:'Kegiatan PKL', alt:{ pembimbing_lapangan:'Nilai & Rekap Akhir' }, collapsible:true }
         ];
 
         /* ================= HELPER UMUM ================= */
@@ -576,6 +578,7 @@
                                     <div><label class="${LBL}">Jam selesai</label><input id="jn-selesai" type="time" value="15:30" class="${INP}"></div>
                                 </div>
                                 ${ta('jn-uraian', 'Uraian kegiatan', 4)}${ta('jn-baru', 'Hal baru yang dipelajari', 2)}${ta('jn-kendala', 'Kendala', 2)}${ta('jn-solusi', 'Solusi', 2)}${ta('jn-tl', 'Tindak lanjut', 2)}
+                                <div><label class="${LBL}">Dokumentasi kegiatan (link Google Drive)</label><input id="jn-link" type="url" inputmode="url" placeholder="https://drive.google.com/..." class="${INP}"><p class="text-xs text-slate-400 mt-1">Unggah foto kegiatan ke Google Drive, atur akses "Siapa saja yang memiliki link" (Pelihat), lalu tempel linknya di sini.</p></div>
                                 <div class="flex flex-wrap gap-2">
                                     <button onclick="SISWA4.simpan(false)" class="px-5 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-xl text-sm">Simpan Draft</button>
                                     <button onclick="SISWA4.simpan(true)" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim ke Guru</button>
@@ -584,7 +587,7 @@
                             </div>
                         </div>
                         <div class="${CARD}"><h4 class="font-bold text-slate-900 mb-3">Riwayat Jurnal</h4><div class="space-y-3">
-                            ${jRows.map(j => `<div class="p-4 rounded-xl bg-slate-50 text-sm"><div class="flex flex-wrap items-center justify-between gap-2"><b>${tgl(j.tanggal)}</b>${badge(j.status)}</div><div class="mt-1 text-slate-700 whitespace-pre-line">${esc(j.uraian)}</div>${j.status === 'revision' && j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan guru: ${esc(j.catatan_guru)}</div>` : ''}${['draft', 'revision'].includes(j.status) ? `<button onclick="SISWA4.ubah('${j.id}')" class="mt-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">Ubah</button>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada jurnal.</div>'}
+                            ${jRows.map(j => `<div class="p-4 rounded-xl bg-slate-50 text-sm"><div class="flex flex-wrap items-center justify-between gap-2"><b>${tgl(j.tanggal)}</b>${badge(j.status)}</div><div class="mt-1 text-slate-700 whitespace-pre-line">${esc(j.uraian)}</div>${j.dokumentasi_url ? `<a href="${esc(j.dokumentasi_url)}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs text-indigo-600 font-semibold underline">Buka dokumentasi</a>` : ''}${j.status === 'revision' && j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan guru: ${esc(j.catatan_guru)}</div>` : ''}${['draft', 'revision'].includes(j.status) ? `<button onclick="SISWA4.ubah('${j.id}')" class="mt-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">Ubah</button>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada jurnal.</div>'}
                         </div></div></div>`;
                 } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
             }
@@ -594,7 +597,7 @@
                 jEditId = id;
                 const set = (k, v) => { document.getElementById(k).value = v || ''; };
                 set('jn-tgl', j.tanggal); set('jn-mulai', (j.jam_mulai || '').slice(0, 5)); set('jn-selesai', (j.jam_selesai || '').slice(0, 5));
-                set('jn-uraian', j.uraian); set('jn-baru', j.hal_baru); set('jn-kendala', j.kendala); set('jn-solusi', j.solusi); set('jn-tl', j.tindak_lanjut);
+                set('jn-uraian', j.uraian); set('jn-baru', j.hal_baru); set('jn-kendala', j.kendala); set('jn-solusi', j.solusi); set('jn-tl', j.tindak_lanjut); set('jn-link', j.dokumentasi_url);
                 document.getElementById('jn-tgl').disabled = true;
                 document.getElementById('jn-judul').textContent = 'Ubah Jurnal ' + tgl(j.tanggal);
                 document.getElementById('jn-batal').classList.remove('hidden');
@@ -610,6 +613,9 @@
                     const payload = { jam_mulai: v('jn-mulai') || null, jam_selesai: v('jn-selesai') || null, uraian: v('jn-uraian'),
                         hal_baru: v('jn-baru') || null, kendala: v('jn-kendala') || null, solusi: v('jn-solusi') || null, tindak_lanjut: v('jn-tl') || null,
                         status: kirim ? 'submitted' : 'draft' };
+                    const link = v('jn-link');
+                    if(link && !/^https?:\/\/\S+$/i.test(link)) throw new Error('Link dokumentasi harus diawali http:// atau https:// dan tanpa spasi.');
+                    if(link || (jEditId && (jRows.find(r => r.id === jEditId) || {}).dokumentasi_url)) payload.dokumentasi_url = link || null;
                     if(jEditId) await writeRow('jurnal_kegiatan', jEditId, payload);
                     else await writeRow('jurnal_kegiatan', null, { ...payload, tanggal: v('jn-tgl'), siswa_id: x.sid, penempatan_id: x.pen.id });
                     toast(kirim ? 'Jurnal terkirim ke guru pembimbing.' : 'Draft jurnal tersimpan.');
@@ -786,7 +792,7 @@
                         <div class="flex flex-wrap items-start justify-between gap-2"><div><b>${esc(nm(j.siswa_id))}</b> <span class="text-slate-500 text-sm">· ${dmy(j.tanggal)} · ${(j.jam_mulai || '').slice(0, 5)}–${(j.jam_selesai || '').slice(0, 5)}</span></div>${badge(j.status)}</div>
                         <div class="mt-2 text-sm text-slate-800 whitespace-pre-line">${esc(j.uraian)}</div>
                         ${[['Hal baru', j.hal_baru], ['Kendala', j.kendala], ['Solusi', j.solusi], ['Tindak lanjut', j.tindak_lanjut]].filter(x => x[1]).map(x => `<div class="mt-1 text-xs text-slate-600"><b>${x[0]}:</b> ${esc(x[1])}</div>`).join('')}
-                        ${j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan: ${esc(j.catatan_guru)}</div>` : ''}
+                        ${j.dokumentasi_url && /^https?:\/\//i.test(j.dokumentasi_url) ? `<div class="mt-2 text-xs"><b>Dokumentasi:</b> <a href="${esc(j.dokumentasi_url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-semibold underline">Buka foto kegiatan</a></div>` : '<div class="mt-2 text-xs text-slate-400">Dokumentasi: belum dilampirkan</div>'}${j.catatan_guru ? `<div class="mt-2 text-xs text-rose-700">Catatan: ${esc(j.catatan_guru)}</div>` : ''}
                         ${act && ['submitted', 'under_review'].includes(j.status) ? `<div class="mt-3 flex gap-1.5">${j.status === 'submitted' ? B('Tinjau', `STAFF4.verif('${j.id}','under_review')`, 'amber') : ''}${B('Setujui', `STAFF4.verif('${j.id}','approved')`, 'emerald')}${B('Revisi', `STAFF4.verif('${j.id}','revision')`, 'rose')}</div>` : ''}
                         </div>`).join('')}</div>` : `<div class="${CARD} text-sm text-slate-400">Tidak ada jurnal pada filter ini.</div>`;
                 } catch(err) { out.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
