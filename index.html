@@ -2674,8 +2674,11 @@
             <td style="width:80px;text-align:right;vertical-align:middle"><img src="${LOGO_SEKOLAH}" style="width:62px;height:auto" alt=""></td></tr></table>
             <div style="border-top:3px solid #000;border-bottom:1px solid #000;height:2px;margin:4px 0 14px"></div>`;
 
-        const sNomorHtml = (kode, urut, tahun) => `${esc(kode)} / ${urut ? esc(urut) : '&nbsp;'.repeat(14)} / ${tahun}`;
-        const sNomorTxt = (kode, urut, tahun) => `${kode} / ${urut || '....'} / ${tahun}`;
+        // Format nomor: "kode / nomor.0001". Ubah ke true jika tahun ingin ikut dicetak ("kode / nomor.0001 / tahun").
+        const NOMOR_PAKAI_TAHUN = false;
+        const sNomorCore = (urut, sub) => urut ? `${urut}${sub ? '.' + String(sub).padStart(4, '0') : ''}` : null;
+        const sNomorHtml = (kode, urut, tahun, sub) => `${esc(kode)} / ${sNomorCore(urut, sub) ? esc(sNomorCore(urut, sub)) : '&nbsp;'.repeat(14)}${NOMOR_PAKAI_TAHUN ? ' / ' + tahun : ''}`;
+        const sNomorTxt = (kode, urut, tahun, sub) => `${kode} / ${sNomorCore(urut, sub) || '....'}${NOMOR_PAKAI_TAHUN ? ' / ' + tahun : ''}`;
 
         const sMeta = (c) => `<table style="width:100%;border-collapse:collapse;margin-bottom:14pt">
             <tr><td style="width:76px;vertical-align:top">Nomor</td><td style="vertical-align:top">: ${c.nomorHtml}</td><td style="text-align:right;vertical-align:top;white-space:nowrap">${esc(c.set.kota)}, ${esc(tglPanjang(c.tanggal))}</td></tr>
@@ -2944,7 +2947,7 @@
                 show('sf-industri-wrap', free);
                 show('sf-tapel-wrap', free);
                 document.getElementById('sf-nomor-label').textContent = items.length > 1
-                    ? 'Nomor urut awal (surat berikutnya otomatis bertambah 1)' : 'Nomor urut surat';
+                    ? 'Nomor surat setelah kode (urutan 0001, 0002, ... ditambahkan otomatis)' : 'Nomor surat setelah kode (urutan 0001 ditambahkan otomatis)';
                 setVal('sf-tanggal', todayISO()); setVal('sf-perihal', def.perihal || ''); setVal('sf-lampiran', def.lampiran || '-');
                 setVal('sf-catatan', ''); setVal('sf-batas', ''); setVal('sf-kegiatan2', ''); setVal('sf-nomor', '');
                 setVal('sf-petugas-cari', ''); setVal('sf-industri-cari', '');
@@ -2984,7 +2987,7 @@
             nomorPreview: function() {
                 if(!this.pending || !this.set) return;
                 const kode = this.kodeOf(this.pending.jenis), tahun = (val('sf-tanggal') || todayISO()).slice(0, 4), n = val('sf-nomor');
-                document.getElementById('sf-nomor-prev').textContent = `Nomor: ${kode} / ${n || '........'} / ${tahun}`;
+                document.getElementById('sf-nomor-prev').textContent = `Nomor: ${sNomorTxt(kode, n ? parseInt(n, 10) : null, tahun, 1)}`;
             },
             onTanggal: function() {
                 const y = (val('sf-tanggal') || '').slice(0, 4);
@@ -3010,7 +3013,13 @@
                     const tanggal = val('sf-tanggal');
                     const tahun = parseInt(tanggal.slice(0, 4), 10);
                     const nomor0 = val('sf-nomor') ? parseInt(val('sf-nomor'), 10) : null;
-                    if(nomor0 !== null && !(nomor0 >= 1)) throw new Error('Nomor urut harus berupa angka positif.');
+                    if(nomor0 !== null && !(nomor0 >= 1)) throw new Error('Nomor surat harus berupa angka positif.');
+                    let sub0 = 1;
+                    if(nomor0 !== null) {
+                        const rs = await sbClient.rpc('saran_nomor_sub', { p_tahun: tahun, p_kode: this.kodeOf(jenis), p_nomor: nomor0 });
+                        if(rs.error) throw new Error(friendlyError(rs.error));
+                        sub0 = rs.data;
+                    }
                     const kode = this.kodeOf(jenis);
                     const common = { set, tanggal, perihal: val('sf-perihal') || def.perihal, lampiran: val('sf-lampiran'),
                                      kegiatan: val('sf-kegiatan'), kegiatan2: val('sf-kegiatan2'), batas: val('sf-batas'),
@@ -3038,10 +3047,10 @@
                     }
 
                     const letters = items.map((it, i) => {
-                        const urut = nomor0 !== null ? nomor0 + i : null;
-                        const c = { ...common, nomorHtml: sNomorHtml(kode, urut, tahun) };
+                        const urut = nomor0, sub = nomor0 !== null ? sub0 + i : null;
+                        const c = { ...common, nomorHtml: sNomorHtml(kode, urut, tahun, sub) };
                         const meta = SURAT_TPL[jenis](c, it);
-                        return { ...meta, urut, tahun, kode, tanggal, perihal: c.perihal, nomorTxt: sNomorTxt(kode, urut, tahun) };
+                        return { ...meta, urut, sub, tahun, kode, tanggal, perihal: c.perihal, nomorTxt: sNomorTxt(kode, urut, tahun, sub) };
                     });
                     this.current = { jenis, letters, archived: false, readonly: false };
                     window.app.ui.closeModal('modal-surat-container');
@@ -3113,7 +3122,7 @@
                         const cl = pg.cloneNode(true); cl.removeAttribute('contenteditable'); return cl.outerHTML;
                     }).join('');
                     const html = sanitizeHtml(pages.split(LOGO_JATENG).join('{{LOGO_JATENG}}').split(LOGO_SEKOLAH).join('{{LOGO_SEKOLAH}}'));
-                    return { jenis: cur.jenis, tahun: L.tahun, kode_klasifikasi: L.kode, nomor_urut: L.urut, nomor_lengkap: L.nomorTxt,
+                    return { jenis: cur.jenis, tahun: L.tahun, kode_klasifikasi: L.kode, nomor_urut: L.urut, nomor_sub: L.sub || null, nomor_lengkap: L.nomorTxt,
                              tanggal_surat: L.tanggal, perihal: L.perihal, tujuan: (L.tujuan || '').slice(0, 400),
                              tahun_pelajaran_id: L.tapel_id || null, industri_id: L.industri_id || null, guru_id: L.guru_id || null,
                              siswa_ids: L.siswa_ids, penempatan_ids: L.penempatan_ids, isi_html: html };
@@ -3121,7 +3130,7 @@
                 const res = await sbClient.from('surat_keluar').insert(recs).select('id');
                 if(res.error) {
                     throw new Error(res.error.code === '23505'
-                        ? 'Nomor urut sudah dipakai oleh surat lain dengan kode dan tahun yang sama. Ubah nomor atau gunakan tombol Saran.'
+                        ? 'Nomor surat ini sudah dipakai surat lain (kode, tahun, dan urutan yang sama). Ubah nomor atau gunakan tombol Saran.'
                         : friendlyError(res.error));
                 }
                 if(!res.data || res.data.length !== recs.length) throw new Error('Surat tidak tersimpan seluruhnya (tidak ada izin).');
