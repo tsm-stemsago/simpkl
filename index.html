@@ -814,6 +814,111 @@
         })();
         window.STAFF4 = STAFF4;
 
+        /* ---------- Tahap 4C: penilaian industri ---------- */
+        const NILAI4 = (() => {
+            Object.assign(BTN_ICONS, { 'Buka Kunci': '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+                'Isi Nilai': BTN_ICONS.Ubah, 'Lihat Nilai': BTN_ICONS.Tinjau || BTN_ICONS['Lihat Pengajuan'] });
+            const CARD = 'bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm';
+            const INP = 'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm';
+            const LBL = 'block text-xs font-semibold text-slate-500 mb-1';
+            const toast = (m, t) => window.app.ui.showToast(m, t);
+            const role = () => window.app.currentUser.role;
+            const canInput = () => ['superadmin', 'pembimbing_lapangan'].includes(role());
+            const num = x => x === null || x === undefined ? '-' : String(+x);
+            const PRED = { A: 'bg-emerald-50 text-emerald-700', B: 'bg-sky-50 text-sky-700', C: 'bg-amber-50 text-amber-700', D: 'bg-rose-50 text-rose-700' };
+            const S = { pen: [], nilai: {}, names: {}, ind: {}, cfg: null, q: '' };
+            const closeOv = () => { const o = document.getElementById('s4-ov'); if(o) o.remove(); };
+            const overlay = html => { closeOv(); const d = document.createElement('div'); d.id = 's4-ov';
+                d.className = 'fixed inset-0 z-[100] bg-slate-900/50 flex items-center justify-center p-4';
+                d.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-auto p-6">${html}</div>`;
+                d.onclick = e => { if(e.target === d) closeOv(); }; document.body.appendChild(d); };
+
+            async function penilaian(c) {
+                c = c || document.getElementById('main-content'); S.main = c;
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const [pen, nil, sis, ind, cfg] = await Promise.all([
+                        q(sbClient.from('penempatan').select('id,siswa_id,industri_id,status').neq('status', 'dibatalkan').limit(2000)),
+                        q(sbClient.from('penilaian_industri').select('*').limit(2000)),
+                        q(sbClient.from('siswa').select('id,nama,kelas').limit(2000)),
+                        q(sbClient.from('industri').select('id,nama').limit(1000)),
+                        q(sbClient.from('pengaturan_penilaian').select('*').eq('id', 1).limit(1))]);
+                    S.pen = pen; S.nilai = Object.fromEntries(nil.map(n => [n.penempatan_id, n]));
+                    S.names = Object.fromEntries(sis.map(s => [s.id, s])); S.ind = Object.fromEntries(ind.map(i => [i.id, i])); S.cfg = cfg[0] || null;
+                    S.pen.sort((a, b) => ((S.names[a.siswa_id] || {}).nama || '').localeCompare((S.names[b.siswa_id] || {}).nama || ''));
+                    c.innerHTML = `<div class="space-y-4"><div class="${CARD} flex flex-wrap gap-3 items-end justify-between">
+                        <div class="flex-1 min-w-[200px]"><label class="${LBL}">Cari siswa atau industri</label><input id="nl-cari" oninput="NILAI4.cari(this.value)" class="${INP}" placeholder="Cari..."></div>
+                        <div class="text-xs text-slate-500">${S.cfg ? `Bobot: Disiplin ${S.cfg.bobot_disiplin}% · Teknis ${S.cfg.bobot_teknis}% · Kerja sama ${S.cfg.bobot_kerjasama}% · Inisiatif ${S.cfg.bobot_inisiatif}% · A≥${S.cfg.batas_a} B≥${S.cfg.batas_b} C≥${S.cfg.batas_c}` : ''}</div>
+                        ${role() === 'superadmin' ? `<button onclick="NILAI4.bobotForm()" class="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-sm">Atur Bobot</button>` : ''}</div>
+                        <div class="${CARD} !p-0 overflow-hidden"><div class="overflow-auto max-h-[calc(100vh-19rem)] min-h-[200px]"><table class="tbl-list w-full text-sm text-left"><thead><tr class="text-slate-500 font-semibold"><th class="p-3">Siswa</th><th class="p-3">Industri</th><th class="p-3 text-center">Disiplin</th><th class="p-3 text-center">Teknis</th><th class="p-3 text-center">Kerja sama</th><th class="p-3 text-center">Inisiatif</th><th class="p-3 text-center">Akhir</th><th class="p-3">Status</th><th class="p-3">Aksi</th></tr></thead><tbody id="nl-body"></tbody></table></div></div></div>`;
+                    S.q = ''; rows();
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            function rows() {
+                const b = document.getElementById('nl-body'); if(!b) return;
+                const k = S.q.toLowerCase().trim();
+                const list = S.pen.filter(p => !k || (((S.names[p.siswa_id] || {}).nama || '') + ' ' + ((S.ind[p.industri_id] || {}).nama || '')).toLowerCase().includes(k));
+                b.innerHTML = list.map(p => {
+                    const s = S.names[p.siswa_id] || { nama: 'Siswa', kelas: '' }, n = S.nilai[p.id], fin = n && n.status === 'final';
+                    return `<tr class="border-b border-slate-100"><td class="p-3"><b>${esc(s.nama)}</b><div class="text-xs text-slate-500">${esc(s.kelas || '')}</div></td>
+                        <td class="p-3">${esc((S.ind[p.industri_id] || {}).nama || '-')}</td>
+                        ${n ? [n.nilai_disiplin, n.nilai_teknis, n.nilai_kerjasama, n.nilai_inisiatif].map(v => `<td class="p-3 text-center">${num(v)}</td>`).join('') : '<td class="p-3 text-center text-slate-300" colspan="4">Belum dinilai</td>'}
+                        <td class="p-3 text-center">${n && n.nilai_akhir !== null ? `<b>${num(n.nilai_akhir)}</b> <span class="px-2 py-0.5 rounded-md text-xs font-bold ${PRED[n.predikat] || ''}">${esc(n.predikat)}</span>` : '-'}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${fin ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${fin ? 'Final' : (n ? 'Draft' : 'Kosong')}</span></td>
+                        <td class="p-3">${actions(canInput() && !fin && B('Isi Nilai', `NILAI4.form('${p.id}')`, 'indigo'), role() === 'superadmin' && fin && B('Buka Kunci', `NILAI4.buka('${n.id}')`, 'amber'), (fin || !canInput()) && n && B('Lihat Nilai', `NILAI4.form('${p.id}')`, 'slate'))}</td></tr>`;
+                }).join('') || '<tr><td colspan="9" class="p-6 text-center text-slate-400">Belum ada siswa dengan penempatan.</td></tr>';
+            }
+            const cari = v => { S.q = v; rows(); };
+            function form(pid) {
+                const p = S.pen.find(x => x.id === pid), n = S.nilai[pid] || {}, s = S.names[p.siswa_id] || { nama: 'Siswa' };
+                const ro = !canInput() || n.status === 'final';
+                const f = (id, l, v) => `<div><label class="${LBL}">${l} (0–100)</label><input id="${id}" type="number" min="0" max="100" step="0.01" value="${v ?? ''}" ${ro ? 'disabled' : ''} class="${INP}"></div>`;
+                overlay(`<h3 class="font-bold text-lg text-slate-900">Nilai Industri</h3><p class="text-sm text-slate-500 mb-4">${esc(s.nama)} · ${esc((S.ind[p.industri_id] || {}).nama || '')}</p>
+                    <div class="grid grid-cols-2 gap-3">${f('nl-d', 'Disiplin', n.nilai_disiplin)}${f('nl-t', 'Kompetensi teknis', n.nilai_teknis)}${f('nl-k', 'Kerja sama', n.nilai_kerjasama)}${f('nl-i', 'Inisiatif', n.nilai_inisiatif)}</div>
+                    <label class="${LBL} mt-3">Catatan evaluasi</label><textarea id="nl-cat" rows="3" ${ro ? 'disabled' : ''} class="${INP}">${esc(n.catatan || '')}</textarea>
+                    <div class="flex flex-wrap justify-end gap-2 mt-5"><button onclick="NILAI4.tutup()" class="px-4 py-2 text-slate-500 text-sm">${ro ? 'Tutup' : 'Batal'}</button>
+                    ${ro ? '' : `<button onclick="NILAI4.simpan('${pid}', false)" class="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-sm">Simpan Draft</button><button onclick="NILAI4.simpan('${pid}', true)" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Simpan & Finalkan</button>`}</div>`);
+            }
+            async function simpan(pid, final) {
+                const v = id => { const x = document.getElementById(id).value.trim(); return x === '' ? null : Number(x); };
+                const vals = ['nl-d', 'nl-t', 'nl-k', 'nl-i'].map(v);
+                if(vals.some(x => x !== null && (isNaN(x) || x < 0 || x > 100))) return toast('Setiap nilai harus antara 0 sampai 100.', 'error');
+                if(final && vals.some(x => x === null)) return toast('Lengkapi keempat nilai sebelum memfinalkan.', 'error');
+                if(final && !confirm('Setelah difinalkan, nilai tidak dapat diubah (hanya Super Admin yang dapat membuka kunci). Lanjutkan?')) return;
+                try {
+                    const { data, error } = await sbClient.rpc('simpan_penilaian', { p_penempatan: pid, p_disiplin: vals[0], p_teknis: vals[1], p_kerjasama: vals[2], p_inisiatif: vals[3], p_catatan: document.getElementById('nl-cat').value, p_final: final });
+                    if(error) throw new Error(friendlyError(error));
+                    closeOv(); toast(data && data.nilai_akhir !== null ? `Tersimpan. Nilai akhir ${data.nilai_akhir} (${data.predikat}).` : 'Draft nilai tersimpan.'); penilaian(S.main);
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            async function buka(id) {
+                if(!confirm('Buka kunci penilaian ini agar dapat diubah kembali?')) return;
+                try { const { error } = await sbClient.rpc('buka_kunci_penilaian', { p_id: id }); if(error) throw new Error(friendlyError(error)); toast('Kunci penilaian dibuka.'); penilaian(S.main); }
+                catch(err) { toast(err.message, 'error'); }
+            }
+            function bobotForm() {
+                const c = S.cfg || {}, f = (id, l, v) => `<div><label class="${LBL}">${l}</label><input id="${id}" type="number" min="0" max="100" value="${v ?? ''}" class="${INP}"></div>`;
+                overlay(`<h3 class="font-bold text-lg text-slate-900 mb-1">Bobot dan Predikat</h3><p class="text-xs text-slate-500 mb-4">Total bobot harus 100. Perubahan berlaku untuk penilaian yang disimpan sesudahnya; nilai yang sudah tersimpan tidak dihitung ulang.</p>
+                    <div class="grid grid-cols-2 gap-3">${f('bw-d', 'Disiplin (%)', c.bobot_disiplin)}${f('bw-t', 'Kompetensi teknis (%)', c.bobot_teknis)}${f('bw-k', 'Kerja sama (%)', c.bobot_kerjasama)}${f('bw-i', 'Inisiatif (%)', c.bobot_inisiatif)}${f('bw-a', 'Batas A (≥)', c.batas_a)}${f('bw-b', 'Batas B (≥)', c.batas_b)}${f('bw-c', 'Batas C (≥)', c.batas_c)}</div>
+                    <div class="flex justify-end gap-2 mt-5"><button onclick="NILAI4.tutup()" class="px-4 py-2 text-slate-500 text-sm">Batal</button><button onclick="NILAI4.bobotSimpan()" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Simpan</button></div>`);
+            }
+            async function bobotSimpan() {
+                const g = id => Number(document.getElementById(id).value);
+                const r = { bobot_disiplin: g('bw-d'), bobot_teknis: g('bw-t'), bobot_kerjasama: g('bw-k'), bobot_inisiatif: g('bw-i'), batas_a: g('bw-a'), batas_b: g('bw-b'), batas_c: g('bw-c') };
+                if(Object.values(r).some(x => !Number.isInteger(x) || x < 0 || x > 100)) return toast('Semua isian harus bilangan bulat 0 sampai 100.', 'error');
+                if(r.bobot_disiplin + r.bobot_teknis + r.bobot_kerjasama + r.bobot_inisiatif !== 100) return toast('Total bobot harus 100.', 'error');
+                if(!(r.batas_a > r.batas_b && r.batas_b > r.batas_c && r.batas_c > 0)) return toast('Batas predikat harus berurutan: A > B > C > 0.', 'error');
+                try {
+                    const { data, error } = await sbClient.from('pengaturan_penilaian').update(r).eq('id', 1).select();
+                    if(error) throw new Error(friendlyError(error));
+                    if(!data || !data.length) throw new Error('Perubahan tidak tersimpan (tidak ada izin).');
+                    closeOv(); toast('Bobot dan predikat diperbarui.'); penilaian(S.main);
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            return { penilaian, cari, form, simpan, buka, bobotForm, bobotSimpan, tutup: closeOv, _S: S };
+        })();
+        window.NILAI4 = NILAI4;
+
         const statusBadge = (aktif) => aktif === false
             ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
             : '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs">Aktif</span>';
@@ -1259,7 +1364,7 @@
                 else if(view === 'presensi') STAFF4.rekap(main);
                 else if(view === 'jurnal') STAFF4.jurnal(main);
                 else if(view === 'visitasi') this.views.renderVisitasi(main);
-                else if(view === 'penilaian') this.views.renderPenilaian(main);
+                else if(view === 'penilaian') NILAI4.penilaian(main);
                 else if(view === 'presensi-siswa') this.views.renderPresensiSiswa(main);
                 else if(view === 'jurnal-siswa') this.views.renderJurnalSiswa(main);
 
