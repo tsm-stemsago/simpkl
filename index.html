@@ -52,6 +52,9 @@
         }
             #sidebar-menu{scrollbar-width:none;-ms-overflow-style:none}
         #sidebar-menu::-webkit-scrollbar{display:none}
+            .tbl-list thead th{position:sticky;top:0;z-index:10;background:#f8fafc;box-shadow:inset 0 -1px 0 #e2e8f0}
+        .tbl-list thead th{padding-top:.75rem;padding-bottom:.75rem;white-space:nowrap}
+        .tbl-list tbody td{padding-top:.5rem;padding-bottom:.5rem}
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
@@ -436,7 +439,7 @@
             if(!ic) return `<button onclick="${js}" class="px-3 py-1 ${BTN_TONE[tone]} rounded-lg text-xs font-semibold">${label}</button>`;
             return `<button onclick="${js}" title="${label}" aria-label="${label}" class="inline-flex items-center justify-center w-8 h-8 ${BTN_TONE[tone]} rounded-lg hover:brightness-95 transition"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg></button>`;
         };
-        const actions = (...btns) => `<div class="flex flex-wrap gap-1.5">${btns.filter(Boolean).join('')}</div>`;
+        const actions = (...btns) => `<div class="flex flex-nowrap items-center gap-1">${btns.filter(Boolean).join('')}</div>`;
         /* ---------- Tahap 4A: halaman siswa (presensi GPS, izin/sakit, jurnal) ---------- */
         const SISWA4 = (() => {
             const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
@@ -1272,7 +1275,7 @@
 
             /* ---------- Mesin tabel generik: pencarian, filter, loading, error ---------- */
             list: {
-                rows: {}, visible: {},
+                rows: {}, visible: {}, page: {}, size: {}, sig: {},
                 find: function(key, id) { return (this.rows[key] || []).find(r => r.id === id); },
 
                 show: function(key, container) {
@@ -1293,13 +1296,15 @@
                                     ${filterHtml}${toolHtml}${addHtml}
                                 </div>
                             </div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse text-sm">
+                            <div id="scroll-${key}" class="overflow-auto max-h-[calc(100vh-19rem)] min-h-[240px]">
+                                <table class="tbl-list w-full text-left border-collapse text-sm">
                                     <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">${m.headers.map(h => `<th class="p-4">${esc(h)}</th>`).join('')}</tr></thead>
                                     <tbody id="tbody-${key}"></tbody>
                                 </table>
                             </div>
+                            <div id="pager-${key}"></div>
                         </div>`;
+                    this.sig[key] = undefined; this.page[key] = 1;
                     this.reload(key);
                 },
 
@@ -1326,11 +1331,37 @@
                     const f = fEl ? fEl.value : '';
                     const all = this.rows[key] || [];
                     const rows = all.filter(d => (!s || m.text(d).toLowerCase().includes(s)) && (!f || m.filter.match(d, f)));
+                    if(m.sort) rows.sort(m.sort);
                     this.visible[key] = rows;
+                    const sig = s + '|' + f;
+                    if(this.sig[key] !== sig) { this.sig[key] = sig; this.page[key] = 1; }
+                    const size = this.size[key] || 25, pages = Math.max(1, Math.ceil(rows.length / size));
+                    const pg = Math.min(this.page[key] || 1, pages); this.page[key] = pg;
                     tbody.innerHTML = rows.length
-                        ? rows.map(d => m.row(d)).join('')
+                        ? rows.slice((pg - 1) * size, pg * size).map(d => m.row(d)).join('')
                         : `<tr><td colspan="${m.headers.length}" class="p-6 text-center text-slate-400">${all.length ? 'Tidak ada data yang cocok.' : 'Belum ada data.'}</td></tr>`;
+                    this.pager(key, rows.length, pg, pages, size);
                     lucide.createIcons();
+                },
+                go: function(key, p) {
+                    this.page[key] = p; this.apply(key);
+                    const sc = document.getElementById('scroll-' + key); if(sc) sc.scrollTop = 0;
+                },
+                setSize: function(key, n) { this.size[key] = Number(n) || 25; this.page[key] = 1; this.apply(key); },
+                pager: function(key, total, pg, pages, size) {
+                    const el = document.getElementById('pager-' + key);
+                    if(!el) return;
+                    if(!total) { el.innerHTML = ''; return; }
+                    const nums = [];
+                    for(let i = 1; i <= pages; i++) if(i === 1 || i === pages || Math.abs(i - pg) <= 1) nums.push(i);
+                    let btns = '', prev = 0;
+                    nums.forEach(i => {
+                        if(prev && i - prev > 1) btns += '<span class="px-1 text-slate-400">…</span>';
+                        btns += `<button onclick="window.app.list.go('${key}',${i})" class="min-w-8 h-8 px-2 rounded-lg text-xs font-semibold ${i === pg ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">${i}</button>`;
+                        prev = i;
+                    });
+                    const nav = (lbl, p, dis) => `<button ${dis ? 'disabled' : ''} onclick="window.app.list.go('${key}',${p})" class="h-8 px-3 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40">${lbl}</button>`;
+                    el.innerHTML = `<div class="px-4 sm:px-6 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500"><div>Menampilkan <b>${(pg - 1) * size + 1}–${Math.min(pg * size, total)}</b> dari <b>${total}</b> data</div><div class="flex flex-wrap items-center gap-1.5"><select onchange="window.app.list.setSize('${key}', this.value)" class="h-8 px-2 rounded-lg border border-slate-200 text-xs bg-white">${[10, 25, 50, 100].map(n => `<option value="${n}" ${n === size ? 'selected' : ''}>${n} / hal</option>`).join('')}</select>${nav('‹', pg - 1, pg <= 1)}${btns}${nav('›', pg + 1, pg >= pages)}</div></div>`;
                 }
             },
 
@@ -1559,6 +1590,7 @@
                     headers: ['NIS / NISN','Nama Siswa','Konsentrasi & Kelas','Kontak HP','Alamat','Status','Aksi'],
                     filter: { label: 'Semua konsentrasi', options: () => window.app.kompetensi.map(k => k.kode), match: (d, v) => d.kompetensi === v },
                     load: () => q(sbClient.from('siswa').select('*').order('nama')),
+                    sort: (a, b) => String(a.nis || '').localeCompare(String(b.nis || ''), undefined, { numeric: true }),
                     text: d => [d.nama, d.nis, d.nisn, d.kelas, d.email].join(' '),
                     row: function(d) {
                         const app = window.app, manage = app.manageByKomp([d.kompetensi]);
