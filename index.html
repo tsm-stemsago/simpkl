@@ -919,6 +919,123 @@
         })();
         window.NILAI4 = NILAI4;
 
+        /* ---------- Tahap 4D: monitoring dan visitasi ---------- */
+        const VISIT4 = (() => {
+            Object.assign(BTN_ICONS, { 'Lihat Detail': BTN_ICONS.Tinjau || BTN_ICONS['Lihat Pengajuan'] });
+            const CARD = 'bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm';
+            const INP = 'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm';
+            const LBL = 'block text-xs font-semibold text-slate-500 mb-1';
+            const toast = (m, t) => window.app.ui.showToast(m, t);
+            const role = () => window.app.currentUser.role;
+            const dmy = d => d.split('-').reverse().join('-');
+            const ST = { terjadwal: ['Terjadwal', 'bg-sky-50 text-sky-700'], selesai: ['Selesai', 'bg-emerald-50 text-emerald-700'], dibatalkan: ['Dibatalkan', 'bg-slate-100 text-slate-500'] };
+            const KD = { baik: 'Baik', cukup: 'Cukup', perlu_perhatian: 'Perlu perhatian' };
+            const S = { vis: [], vs: {}, guru: {}, ind: [], names: {}, pen: [], q: '', cur: {}, edit: null };
+            const canEdit = v => ['superadmin', 'pokja'].includes(role()) || (role() === 'guru' && S.myGuru && v.guru_id === S.myGuru);
+            const closeOv = () => { const o = document.getElementById('s4-ov'); if(o) o.remove(); };
+            const overlay = html => { closeOv(); const d = document.createElement('div'); d.id = 's4-ov';
+                d.className = 'fixed inset-0 z-[100] bg-slate-900/50 flex items-center justify-center p-4';
+                d.innerHTML = `<div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-auto p-5 sm:p-6">${html}</div>`;
+                d.onclick = e => { if(e.target === d) closeOv(); }; document.body.appendChild(d); };
+
+            async function visitasi(c) {
+                c = c || document.getElementById('main-content'); S.main = c;
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const staff = ['superadmin', 'pokja'].includes(role());
+                    const [vis, ind, pen, sis, gur] = await Promise.all([
+                        q(sbClient.from('visitasi').select('*').order('tanggal', { ascending: false }).limit(500)),
+                        q(sbClient.from('industri').select('id,nama,kota').eq('aktif', true).order('nama').limit(1000)),
+                        q(sbClient.from('penempatan').select('siswa_id,industri_id,status').neq('status', 'dibatalkan').limit(3000)),
+                        q(sbClient.from('siswa').select('id,nama,kelas').limit(3000)),
+                        staff ? q(sbClient.rpc('list_guru_untuk_penempatan')) : q(sbClient.from('guru').select('id,nama').limit(5))]);
+                    const ids = vis.map(v => v.id);
+                    const vs = ids.length ? await q(sbClient.from('visitasi_siswa').select('*').in('visitasi_id', ids).limit(5000)) : [];
+                    S.vis = vis; S.ind = ind; S.pen = pen; S.names = Object.fromEntries(sis.map(s => [s.id, s]));
+                    S.guru = Object.fromEntries(gur.map(g => [g.id, g.nama])); S.guruList = gur;
+                    S.myGuru = role() === 'guru' ? (gur[0] || {}).id : null;
+                    S.vs = {}; vs.forEach(r => (S.vs[r.visitasi_id] = S.vs[r.visitasi_id] || []).push(r));
+                    c.innerHTML = `<div class="space-y-4"><div class="${CARD} flex flex-wrap gap-3 items-end justify-between">
+                        <div class="flex-1 min-w-[200px]"><label class="${LBL}">Cari guru atau industri</label><input oninput="VISIT4.cari(this.value)" class="${INP}" placeholder="Cari..."></div>
+                        <button onclick="VISIT4.form()" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Jadwalkan / Catat Visitasi</button></div>
+                        <div class="${CARD} !p-0 overflow-hidden"><div class="overflow-auto max-h-[calc(100vh-19rem)] min-h-[200px]"><table class="tbl-list w-full text-sm text-left"><thead><tr class="text-slate-500 font-semibold"><th class="p-3">Tanggal</th><th class="p-3">Guru pelaksana</th><th class="p-3">Industri</th><th class="p-3 text-center">Siswa</th><th class="p-3">Status</th><th class="p-3">Aksi</th></tr></thead><tbody id="vz-body"></tbody></table></div></div></div>`;
+                    S.q = ''; rows();
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            const indNama = id => (S.ind.find(i => i.id === id) || {}).nama || '-';
+            function rows() {
+                const b = document.getElementById('vz-body'); if(!b) return;
+                const k = S.q.toLowerCase().trim();
+                const list = S.vis.filter(v => !k || ((S.guru[v.guru_id] || '') + ' ' + indNama(v.industri_id)).toLowerCase().includes(k));
+                b.innerHTML = list.map(v => { const st = ST[v.status] || [v.status, ''];
+                    return `<tr class="border-b border-slate-100"><td class="p-3 whitespace-nowrap"><b>${dmy(v.tanggal)}</b><div class="text-xs text-slate-500">${(v.jam_mulai || '').slice(0, 5)}${v.jam_selesai ? '–' + v.jam_selesai.slice(0, 5) : ''}</div></td>
+                        <td class="p-3">${esc(S.guru[v.guru_id] || 'Guru')}</td><td class="p-3">${esc(indNama(v.industri_id))}</td>
+                        <td class="p-3 text-center">${(S.vs[v.id] || []).length}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${st[1]}">${esc(st[0])}</span></td>
+                        <td class="p-3">${actions(canEdit(v) ? B('Ubah', `VISIT4.form('${v.id}')`, 'indigo') : B('Lihat Detail', `VISIT4.form('${v.id}')`, 'slate'), (role() === 'superadmin' || (canEdit(v) && v.status === 'terjadwal')) && B('Hapus', `VISIT4.hapus('${v.id}')`, 'rose'))}</td></tr>`; }).join('')
+                    || '<tr><td colspan="6" class="p-6 text-center text-slate-400">Belum ada visitasi.</td></tr>';
+            }
+            const cari = v => { S.q = v; rows(); };
+
+            function siswaBox() {
+                const ind = (document.getElementById('vz-ind') || {}).value, box = document.getElementById('vz-siswa'); if(!box) return;
+                const ro = S.ro, ids = [...new Set(S.pen.filter(p => p.industri_id === ind).map(p => p.siswa_id))]
+                    .sort((a, b) => ((S.names[a] || {}).nama || '').localeCompare((S.names[b] || {}).nama || ''));
+                box.innerHTML = ids.length ? ids.map(id => { const c = S.cur[id], s = S.names[id] || { nama: 'Siswa', kelas: '' };
+                    return `<div class="grid grid-cols-12 gap-2 items-center py-1.5 border-b border-slate-100 text-sm"><label class="col-span-12 sm:col-span-5 flex items-center gap-2"><input type="checkbox" id="vz-c-${id}" ${c ? 'checked' : ''} ${ro ? 'disabled' : ''}><span><b>${esc(s.nama)}</b> <span class="text-xs text-slate-500">${esc(s.kelas || '')}</span></span></label>
+                        <select id="vz-k-${id}" ${ro ? 'disabled' : ''} class="col-span-5 sm:col-span-3 ${INP}">${Object.entries(KD).map(([k, l]) => `<option value="${k}" ${c && c.kondisi === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                        <input id="vz-n-${id}" value="${esc(c ? c.catatan || '' : '')}" ${ro ? 'disabled' : ''} placeholder="Catatan" class="col-span-7 sm:col-span-4 ${INP}"></div>`; }).join('')
+                    : '<p class="text-sm text-slate-400 py-2">Tidak ada siswa yang dapat Anda pilih di industri ini.</p>';
+            }
+            const pilihIndustri = () => { S.cur = {}; if(S.edit && document.getElementById('vz-ind').value === S.edit.industri_id) (S.vs[S.edit.id] || []).forEach(r => { S.cur[r.siswa_id] = r; }); siswaBox(); };
+            function form(id) {
+                const v = id ? S.vis.find(x => x.id === id) : { tanggal: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }), status: 'terjadwal' };
+                S.edit = id ? v : null; S.ro = !!id && !canEdit(v);
+                S.cur = {}; if(id) (S.vs[id] || []).forEach(r => { S.cur[r.siswa_id] = r; });
+                const ro = S.ro ? 'disabled' : '', f = (i, l, val, t = 'text') => `<div><label class="${LBL}">${l}</label><input id="${i}" type="${t}" value="${esc(val || '')}" ${ro} class="${INP}"></div>`;
+                const ta = (i, l, val) => `<div><label class="${LBL}">${l}</label><textarea id="${i}" rows="2" ${ro} class="${INP}">${esc(val || '')}</textarea></div>`;
+                const guruSel = ['superadmin', 'pokja'].includes(role()) ? `<div><label class="${LBL}">Guru pelaksana</label><select id="vz-guru" ${ro} class="${INP}"><option value="">Pilih guru</option>${(S.guruList || []).map(g => `<option value="${g.id}" ${v.guru_id === g.id ? 'selected' : ''}>${esc(g.nama)}</option>`).join('')}</select></div>` : '';
+                overlay(`<h3 class="font-bold text-lg text-slate-900 mb-4">${id ? (S.ro ? 'Detail Visitasi' : 'Ubah Visitasi') : 'Jadwalkan / Catat Visitasi'}</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${f('vz-tgl', 'Tanggal', v.tanggal, 'date')}${f('vz-mulai', 'Jam mulai', (v.jam_mulai || '').slice(0, 5), 'time')}${f('vz-selesai', 'Jam selesai', (v.jam_selesai || '').slice(0, 5), 'time')}</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">${guruSel}<div><label class="${LBL}">Industri</label><select id="vz-ind" onchange="VISIT4.pilihIndustri()" ${ro} class="${INP}"><option value="">Pilih industri</option>${S.ind.map(i => `<option value="${i.id}" ${v.industri_id === i.id ? 'selected' : ''}>${esc(i.nama)}${i.kota ? ' (' + esc(i.kota) + ')' : ''}</option>`).join('')}</select></div>
+                    <div><label class="${LBL}">Status</label><select id="vz-status" ${ro} class="${INP}">${Object.entries(ST).map(([k, l]) => `<option value="${k}" ${v.status === k ? 'selected' : ''}>${l[0]}</option>`).join('')}</select></div></div>
+                    <label class="${LBL} mt-4">Siswa yang dimonitor dan kondisinya</label><div id="vz-siswa" class="max-h-56 overflow-auto rounded-xl border border-slate-100 px-3"></div>
+                    <div class="grid grid-cols-1 gap-3 mt-4">${ta('vz-kondisi', 'Kondisi umum di industri', v.kondisi_umum)}${ta('vz-catatan', 'Catatan evaluasi', v.catatan_evaluasi)}${ta('vz-kendala', 'Kendala', v.kendala)}${ta('vz-tindak', 'Tindak lanjut', v.tindak_lanjut)}${f('vz-link', 'Dokumentasi (link Google Drive)', v.dokumentasi_url, 'url')}</div>
+                    <div class="flex justify-end gap-2 mt-5"><button onclick="VISIT4.tutup()" class="px-4 py-2 text-slate-500 text-sm">${S.ro ? 'Tutup' : 'Batal'}</button>${S.ro ? '' : `<button onclick="VISIT4.simpan()" class="px-5 py-2 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Simpan</button>`}</div>`);
+                siswaBox();
+            }
+            async function simpan() {
+                const g = i => (document.getElementById(i) || {}).value || '';
+                try {
+                    if(!g('vz-tgl')) throw new Error('Tanggal wajib diisi.');
+                    if(!g('vz-ind')) throw new Error('Industri wajib dipilih.');
+                    if(['superadmin', 'pokja'].includes(role()) && !g('vz-guru')) throw new Error('Guru pelaksana wajib dipilih.');
+                    if(g('vz-mulai') && g('vz-selesai') && g('vz-selesai') <= g('vz-mulai')) throw new Error('Jam selesai harus setelah jam mulai.');
+                    const link = g('vz-link').trim();
+                    if(link && !/^https?:\/\/\S+$/i.test(link)) throw new Error('Link dokumentasi harus diawali http:// atau https:// dan tanpa spasi.');
+                    const sis = S.pen.filter(p => p.industri_id === g('vz-ind')).map(p => p.siswa_id);
+                    const pilih = [...new Set(sis)].filter(id => { const c = document.getElementById('vz-c-' + id); return c && c.checked; })
+                        .map(id => ({ siswa_id: id, kondisi: g('vz-k-' + id) || 'baik', catatan: g('vz-n-' + id) }));
+                    const { error } = await sbClient.rpc('simpan_visitasi', { p_id: S.edit ? S.edit.id : null, p_guru: g('vz-guru') || null, p_industri: g('vz-ind'),
+                        p_tanggal: g('vz-tgl'), p_jam_mulai: g('vz-mulai') || null, p_jam_selesai: g('vz-selesai') || null, p_status: g('vz-status'),
+                        p_kondisi_umum: g('vz-kondisi'), p_catatan: g('vz-catatan'), p_kendala: g('vz-kendala'), p_tindak: g('vz-tindak'), p_link: link, p_siswa: pilih });
+                    if(error) throw new Error(friendlyError(error));
+                    closeOv(); toast('Visitasi tersimpan.'); visitasi(S.main);
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            async function hapus(id) {
+                if(!confirm('Hapus visitasi ini?')) return;
+                try {
+                    const { data, error } = await sbClient.from('visitasi').delete().eq('id', id).select();
+                    if(error) throw new Error(friendlyError(error));
+                    if(!data || !data.length) throw new Error('Visitasi tidak terhapus (tidak ada izin).');
+                    toast('Visitasi dihapus.'); visitasi(S.main);
+                } catch(err) { toast(err.message, 'error'); }
+            }
+            return { visitasi, cari, form, simpan, hapus, pilihIndustri, tutup: closeOv, _S: S };
+        })();
+        window.VISIT4 = VISIT4;
+
         const statusBadge = (aktif) => aktif === false
             ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs">Nonaktif</span>'
             : '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs">Aktif</span>';
@@ -1363,7 +1480,7 @@
                 else if(view === 'surat-pengaturan') this.views.renderSuratPengaturan(main);
                 else if(view === 'presensi') STAFF4.rekap(main);
                 else if(view === 'jurnal') STAFF4.jurnal(main);
-                else if(view === 'visitasi') this.views.renderVisitasi(main);
+                else if(view === 'visitasi') VISIT4.visitasi(main);
                 else if(view === 'penilaian') NILAI4.penilaian(main);
                 else if(view === 'presensi-siswa') this.views.renderPresensiSiswa(main);
                 else if(view === 'jurnal-siswa') this.views.renderJurnalSiswa(main);
