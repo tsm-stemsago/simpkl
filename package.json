@@ -1,0 +1,12 @@
+{
+  "name": "simpkl-smkn1gombong",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./output.css --minify",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}
