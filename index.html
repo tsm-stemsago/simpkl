@@ -126,6 +126,11 @@
                             Masuk Aplikasi
                         </button>
                     </form>
+                    <div class="flex items-center gap-3 my-5 text-xs text-slate-400"><div class="flex-1 h-px bg-slate-200"></div>atau<div class="flex-1 h-px bg-slate-200"></div></div>
+                    <button type="button" onclick="window.app.auth.loginGoogle()" class="w-full py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-3">
+                        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+                        Masuk dengan Google sekolah
+                    </button>
                     <p class="mt-6 text-xs text-slate-400 text-center">Belum memiliki akun? Hubungi admin atau operator PKL sekolah.</p>
                 </div>
             </div>
@@ -224,6 +229,9 @@
     <script>
         const SUPABASE_URL = "https://ttxkwperndmpxfvhlnoe.supabase.co";
         const SUPABASE_KEY = "sb_publishable_QG42NumYrIexUqfIHsTIwg_WSHqb5xD";
+        // Domain akun Google sekolah yang boleh login lewat Google (samakan dengan app.allowed_domain() di database)
+        const ALLOWED_DOMAIN = "@smkn1gombong.sch.id";
+        const domainOk = (email) => String(email || "").toLowerCase().endsWith(ALLOWED_DOMAIN.toLowerCase());
         const REMEMBER_KEY = 'simpkl_remember';
         const EMAIL_KEY = 'simpkl_email';
         // Tautan "lupa password" membawa type=recovery. Dibaca sebelum Supabase menghapus hash dari alamat.
@@ -1123,6 +1131,19 @@
             },
 
             auth: {
+                loginGoogle: async function() {
+                    const errBox = document.getElementById('login-error');
+                    errBox.className = LOGIN_BOX_ERR + ' hidden';
+                    try {
+                        localStorage.setItem(REMEMBER_KEY, document.getElementById('login-remember').checked ? '1' : '0');
+                        const { error } = await sbClient.auth.signInWithOAuth({ provider: 'google', options: {
+                            redirectTo: location.origin + location.pathname,
+                            queryParams: { hd: ALLOWED_DOMAIN.replace('@', ''), prompt: 'select_account' } } });
+                        if(error) throw error;
+                    } catch(err) {
+                        errBox.className = LOGIN_BOX_ERR; errBox.textContent = 'Gagal memulai login Google: ' + friendlyError(err);
+                    }
+                },
                 login: async function(e) {
                     e.preventDefault();
                     const email = document.getElementById('login-email').value.trim();
@@ -1160,11 +1181,19 @@
                     try {
                         const { data: { user }, error: uErr } = await sbClient.auth.getUser();
                         if(uErr || !user) return false;
+                        const notice = (m) => { try { sessionStorage.setItem('simpkl_notice', m); } catch(_) {} };
+                        // Identitas Google hanya sah jika berasal dari domain sekolah (penjagaan kedua selain trigger database)
+                        if((user.identities || []).some(i => i.provider === 'google' && !domainOk(i.identity_data && i.identity_data.email))) {
+                            notice('Login Google hanya untuk akun sekolah (' + ALLOWED_DOMAIN + ').'); return false;
+                        }
 
                         const { data: p, error } = await sbClient.from('profiles')
                             .select('id, email, nama, role, aktif, must_change_password')
                             .eq('id', user.id).maybeSingle();
-                        if(error || !p || !p.aktif) return false;
+                        if(error || !p || !p.aktif) {
+                            notice(!error && !p ? 'Akun ini belum terdaftar di SIM PKL. Hubungi operator PKL sekolah.' : 'Akun tidak aktif atau tidak dapat dimuat. Hubungi operator PKL sekolah.');
+                            return false;
+                        }
 
                         let kompetensi = [];
                         if(p.role === 'pokja') {
