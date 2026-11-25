@@ -1,0 +1,39 @@
+# Membangun output.css (Tailwind) otomatis di GitHub, jadi tidak perlu npm di komputer.
+# Berjalan setiap index.html, konfigurasi Tailwind, atau file ini diubah, dan bisa dijalankan manual.
+name: Build Tailwind CSS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'face-attendance.js'
+      - 'tailwind.config.js'
+      - 'src/input.css'
+      - '.github/workflows/build-css.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build CSS
+        run: npx --yes tailwindcss@3.4.17 -c ./tailwind.config.js -i ./src/input.css -o ./output.css --minify
+      - name: Commit output.css bila berubah
+        run: |
+          if [ -n "$(git status --porcelain output.css)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add output.css
+            git commit -m "Build output.css (Tailwind)"
+            git push
+          else
+            echo "output.css sudah terbaru"
+          fi
