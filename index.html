@@ -226,6 +226,7 @@
     <!-- MODALS CONTAINER -->
     <div id="modals-container"></div>
 
+    <script src="face-attendance.js?v=1"></script>
     <script>
         const SUPABASE_URL = "https://ttxkwperndmpxfvhlnoe.supabase.co";
         const SUPABASE_KEY = "sb_publishable_QG42NumYrIexUqfIHsTIwg_WSHqb5xD";
@@ -467,12 +468,12 @@
             let jRows = [], jEditId = null, ctxCache = null;
 
             async function ctx() {
-                const sis = await q(sbClient.from('siswa').select('id,nama').limit(1));
+                const sis = await q(sbClient.from('siswa').select('id,nama,nis').limit(1));
                 if(!sis[0]) throw new Error('Data siswa untuk akun ini tidak ditemukan.');
                 const pen = await q(sbClient.from('penempatan').select('id,industri_id,tgl_mulai,tgl_selesai').eq('siswa_id', sis[0].id).eq('status', 'aktif').order('tgl_mulai').limit(1));
                 let ind = null;
-                if(pen[0]) ind = (await q(sbClient.from('industri').select('id,nama,radius').eq('id', pen[0].industri_id).limit(1)))[0] || null;
-                return (ctxCache = { sid: sis[0].id, pen: pen[0] || null, ind });
+                if(pen[0]) ind = (await q(sbClient.from('industri').select('id,nama,radius,lat,lng').eq('id', pen[0].industri_id).limit(1)))[0] || null;
+                return (ctxCache = { sid: sis[0].id, nama: sis[0].nama, nis: sis[0].nis, pen: pen[0] || null, ind });
             }
             async function upload(bucket, sid, file, prefix) {
                 if(!file) return null;
@@ -511,8 +512,8 @@
                                 <div class="p-3 rounded-xl bg-slate-50"><div class="text-xs text-slate-500">Pulang hari ini</div><div class="font-bold">${p ? jam(p.waktu) : '-'}</div></div>
                             </div>
                             <div id="pr-status" class="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-sm text-slate-600">Tekan tombol untuk mengambil lokasi GPS Anda.</div>
-                            <label class="${LBL}">Foto selfie (opsional)</label>
-                            <input id="pr-foto" type="file" accept="image/*" capture="user" class="${INP} mb-4">
+                            <div id="fa-panel" class="mb-4"><label class="${LBL}">Foto selfie (opsional)</label>
+                            <input id="pr-foto" type="file" accept="image/*" capture="user" class="${INP}"></div>
                             <div class="grid grid-cols-2 gap-3">
                                 <button id="pr-masuk" ${m ? 'disabled' : ''} onclick="SISWA4.catat('masuk')" class="py-3 bg-emerald-600 text-white font-semibold rounded-xl text-sm disabled:opacity-40">Presensi Masuk</button>
                                 <button id="pr-pulang" ${!m || p ? 'disabled' : ''} onclick="SISWA4.catat('pulang')" class="py-3 bg-rose-600 text-white font-semibold rounded-xl text-sm disabled:opacity-40">Presensi Pulang</button>
@@ -535,8 +536,12 @@
                             <h4 class="font-bold text-slate-900 mb-3">Rekap Presensi Terakhir</h4>
                             <div class="space-y-2">${Object.keys(byDay).sort().reverse().map(d => { const e = byDay[d]; return `<div class="flex flex-wrap items-center justify-between gap-2 text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(d)}</b><span>Masuk ${e.masuk ? jam(e.masuk.waktu) : '-'} ${e.masuk ? badge(e.masuk.status) : ''}${e.masuk && e.masuk.telat_menit ? ` <span class="text-xs text-amber-700">(+${e.masuk.telat_menit} mnt)</span>` : ''} · Pulang ${e.pulang ? jam(e.pulang.waktu) : '-'}</span></div>`; }).join('') || '<div class="text-sm text-slate-400">Belum ada presensi.</div>'}</div>
                         </div></div>`;
+                    if(window.FACE && FACE.enabled()) FACE.renderPanel(document.getElementById('fa-panel'), { sid: x.sid, nama: x.nama });
                 } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
             }
+
+            const haversine = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, dp = (c - a) * r, dl = (d - b) * r,
+                h = Math.sin(dp / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dl / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 
             async function catat(jenis) {
                 const st = document.getElementById('pr-status'), bs = ['pr-masuk', 'pr-pulang'].map(i => document.getElementById(i));
@@ -544,9 +549,25 @@
                 try {
                     st.textContent = 'Mengambil lokasi GPS...';
                     const pos = await gps();
-                    st.textContent = 'Mengirim presensi...';
                     const x = ctxCache || await ctx();
-                    const file = document.getElementById('pr-foto').files[0];
+                    if(window.FACE && FACE.enabled()) {
+                        // Pra-cek radius agar siswa tidak membuang waktu verifikasi wajah; server tetap penentu akhir
+                        if(x.ind && x.ind.lat != null && x.ind.lng != null) {
+                            const d = haversine(pos.latitude, pos.longitude, Number(x.ind.lat), Number(x.ind.lng)), r = x.ind.radius || 100;
+                            if(d - pos.accuracy > r) throw new Error(`Anda sekitar ${Math.round(d)} m dari industri (batas ${r} m). Dekati lokasi lalu coba lagi.`);
+                        }
+                        st.textContent = 'Verifikasi wajah...';
+                        const r = await FACE.presensi(jenis, { pos, siswa: { id: x.sid, nama: x.nama, nis: x.nis }, industri: x.ind });
+                        if(r.cancelled) { presensi(); return; }
+                        if(r.needEnroll) { toast('Daftarkan wajah Anda terlebih dahulu dengan tombol Daftarkan Wajah.', 'error'); presensi(); return; }
+                        if(r.rejected) { toast(`Wajah tidak cocok (jarak ${r.score}). Coba lagi dengan pencahayaan lebih baik.`, 'error'); presensi(); return; }
+                        const ket = r.status === 'VERIFIED' ? 'wajah terverifikasi' : 'menunggu tinjauan guru';
+                        toast(`Presensi ${jenis} tercatat (${r.data.jarak_m} m dari industri${r.data.telat_menit ? ', terlambat ' + r.data.telat_menit + ' menit' : ''}, ${ket}).`);
+                        presensi();
+                        return;
+                    }
+                    st.textContent = 'Mengirim presensi...';
+                    const fe = document.getElementById('pr-foto'), file = fe && fe.files[0];
                     const foto = await upload('presensi-foto', x.sid, file, `${today()}-${jenis}`);
                     const { data, error } = await sbClient.rpc('presensi_catat', { p_jenis: jenis, p_lat: pos.latitude, p_lng: pos.longitude, p_akurasi: pos.accuracy, p_foto_path: foto });
                     if(error) throw new Error(friendlyError(error));
@@ -701,8 +722,9 @@
                             <div><label class="${LBL}">Bulan</label><input id="rk-bln" type="month" value="${ym}" onchange="STAFF4.rekapLoad()" class="${INP}"></div>
                             <div class="flex-1 min-w-[220px]"><label class="${LBL}">Siswa</label><select id="rk-sis" onchange="STAFF4.rekapLoad()" class="${INP} w-full">${opts('')}</select></div>
                         </div>
-                        <div id="rk-izin"></div><div id="rk-hasil"></div></div>`;
+                        <div id="rk-izin"></div><div id="rk-face"></div><div id="rk-hasil"></div></div>`;
                     izinList(); rekapLoad();
+                    if(window.FACE) FACE.renderReview(document.getElementById('rk-face'));
                 } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
             }
             async function izinList() {
@@ -750,7 +772,7 @@
                     const days = Array.from({ length: mr.last }, (_, i) => `${mr.y}-${pad(mr.m)}-${pad(i + 1)}`);
                     const f = b => sid ? b.eq('siswa_id', sid) : b;
                     const [pr, iz] = await Promise.all([
-                        all(() => f(sbClient.from('presensi').select('siswa_id,tanggal,jenis,waktu,status').gte('tanggal', mr.first).lte('tanggal', mr.end)).order('tanggal')),
+                        all(() => f(sbClient.from('presensi').select('siswa_id,tanggal,jenis,waktu,status').or('verification_status.is.null,verification_status.neq.REJECTED').gte('tanggal', mr.first).lte('tanggal', mr.end)).order('tanggal')),
                         all(() => f(sbClient.from('pengajuan_izin').select('siswa_id,tanggal,jenis,status').gte('tanggal', mr.first).lte('tanggal', mr.end)).order('tanggal'))]);
                     const pres = {}, izin = {};
                     pr.forEach(r => { (pres[r.siswa_id + '|' + r.tanggal] = pres[r.siswa_id + '|' + r.tanggal] || {})[r.jenis] = r; });
@@ -758,7 +780,7 @@
                     const sumHtml = s => ['H', 'T', 'I', 'S', 'A', 'TAP'].map(k => `<span class="inline-flex items-center gap-1 mr-2">${chip(k)}<b>${s[k]}</b></span>`).join('');
                     if(sid) {
                         const r = calc(sid, days, today, pres, izin);
-                        out.innerHTML = `<div class="${CARD}"><div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-900">Rekap Presensi — ${esc(nm(sid))}</h4><div class="text-sm">${sumHtml(r.sum)}</div></div>
+                        out.innerHTML = `<div class="${CARD}"><div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-900">Rekap Presensi — ${esc(nm(sid))}${canAct() && window.FACE ? ` <button onclick="FACE.resetWajah('${sid}')" class="ml-2 px-3 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold">Reset wajah</button>` : ''}</h4><div class="text-sm">${sumHtml(r.sum)}</div></div>
                             <div class="overflow-x-auto"><table class="w-full text-sm text-center"><thead><tr class="bg-slate-50 text-slate-500 font-semibold"><th class="p-3 text-left">Tanggal</th><th class="p-3">Masuk</th><th class="p-3">Pulang</th><th class="p-3">Status</th></tr></thead><tbody>
                             ${r.rows.map(x => `<tr class="border-b border-slate-100 ${x.k === 'OFF' ? 'bg-slate-50' : ''}"><td class="p-3 text-left">${dmy(x.d)}</td><td class="p-3">${x.pr && x.pr.masuk ? jam(x.pr.masuk.waktu) : '-'}</td><td class="p-3">${x.pr && x.pr.pulang ? jam(x.pr.pulang.waktu) : '-'}</td><td class="p-3">${chip(x.k)}</td></tr>`).join('')}
                             </tbody></table></div>
