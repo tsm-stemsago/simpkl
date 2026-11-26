@@ -277,7 +277,7 @@
             pokja: ['dashboard','industri','usulan-industri','guru','siswa','penempatan','surat-industri','surat-monitoring','surat-pembimbing','surat-murid','surat-ortu','surat-arsip','presensi','jurnal','visitasi','penilaian'],
             guru: ['dashboard','presensi','jurnal','visitasi'],
             pembimbing_lapangan: ['dashboard','presensi','jurnal','penilaian'],
-            siswa: ['dashboard','usulan-saya','presensi-siswa','jurnal-siswa']
+            siswa: ['dashboard','usulan-saya','presensi-siswa','rekap-saya','jurnal-siswa']
         };
 
         // Lapisan 2: tabel yang boleh diubah/dihapus per role. RLS tetap penentu akhir.
@@ -320,6 +320,7 @@
             { id:'surat-pengaturan', label:'Pengaturan Surat', icon:'settings', group:'Manajemen Persuratan', collapsible:true },
             { id:'usulan-saya', label:'Usulan Tempat PKL', icon:'lightbulb', group:'Kegiatan PKL', collapsible:true },
             { id:'presensi-siswa', label:'Presensi GPS', icon:'map-pin', group:'Kegiatan PKL', collapsible:true },
+            { id:'rekap-saya', label:'Rekap Presensi', icon:'calendar-check', group:'Kegiatan PKL', collapsible:true },
             { id:'presensi', label:'Rekap Presensi', icon:'clock', group:'Kegiatan PKL', collapsible:true },
             { id:'jurnal-siswa', label:'Jurnal Harian', icon:'book-open', group:'Kegiatan PKL', collapsible:true },
             { id:'jurnal', label:'Jurnal Kegiatan', icon:'book-open', group:'Kegiatan PKL', alt:{ guru:'Verifikasi Jurnal' }, collapsible:true },
@@ -500,7 +501,7 @@
                     if(!x.pen) { c.innerHTML = noPen(); return; }
                     const [rows, izin] = await Promise.all([
                         q(sbClient.from('presensi').select('tanggal,jenis,waktu,status,telat_menit').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).order('waktu', { ascending:false }).limit(40)),
-                        q(sbClient.from('pengajuan_izin').select('tanggal,jenis,alasan,status,catatan_keputusan').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).limit(10))]);
+                        q(sbClient.from('pengajuan_izin').select('tanggal,jenis,alasan,status,catatan_keputusan,bukti_path').eq('siswa_id', x.sid).order('tanggal', { ascending:false }).limit(10))]);
                     const t = today(), m = rows.find(r => r.tanggal === t && r.jenis === 'masuk'), p = rows.find(r => r.tanggal === t && r.jenis === 'pulang');
                     const byDay = {}; rows.forEach(r => { (byDay[r.tanggal] = byDay[r.tanggal] || {})[r.jenis] = r; });
                     c.innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
@@ -527,14 +528,14 @@
                                     <div><label class="${LBL}">Jenis</label><select id="iz-jenis" class="${INP}"><option value="izin">Izin</option><option value="sakit">Sakit</option></select></div>
                                 </div>
                                 <div><label class="${LBL}">Alasan</label><textarea id="iz-alasan" rows="2" required class="${INP}"></textarea></div>
-                                <div><label class="${LBL}">Bukti (opsional, foto/surat, maks 5 MB)</label><input id="iz-bukti" type="file" accept="image/*,application/pdf" class="${INP}"></div>
+                                <div><label class="${LBL}">Dokumen pendukung (opsional, link Google Drive)</label><input id="iz-bukti" type="url" inputmode="url" placeholder="https://drive.google.com/..." class="${INP}"><p class="text-xs text-slate-400 mt-1">Unggah foto atau surat ke Google Drive, atur akses "Siapa saja yang memiliki link" (Pelihat), lalu tempel linknya di sini.</p></div>
                                 <button id="iz-btn" type="submit" class="px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Kirim Pengajuan</button>
                             </form>
-                            <div class="mt-4 space-y-2">${izin.map(z => `<div class="text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(z.tanggal)}</b> · ${esc(z.jenis)} ${badge(z.status)}<div class="text-slate-500">${esc(z.alasan)}</div>${z.catatan_keputusan ? `<div class="text-xs text-slate-500">Catatan guru: ${esc(z.catatan_keputusan)}</div>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada pengajuan.</div>'}</div>
+                            <div class="mt-4 space-y-2">${izin.map(z => `<div class="text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(z.tanggal)}</b> · ${esc(z.jenis)} ${badge(z.status)}<div class="text-slate-500">${esc(z.alasan)}</div>${/^https?:\/\//i.test(z.bukti_path || '') ? `<a href="${esc(z.bukti_path)}" target="_blank" rel="noopener noreferrer" class="text-xs text-indigo-600 font-semibold underline">Buka dokumen</a>` : ''}${z.catatan_keputusan ? `<div class="text-xs text-slate-500">Catatan guru: ${esc(z.catatan_keputusan)}</div>` : ''}</div>`).join('') || '<div class="text-sm text-slate-400">Belum ada pengajuan.</div>'}</div>
                         </div>
-                        <div class="${CARD}">
-                            <h4 class="font-bold text-slate-900 mb-3">Rekap Presensi Terakhir</h4>
-                            <div class="space-y-2">${Object.keys(byDay).sort().reverse().map(d => { const e = byDay[d]; return `<div class="flex flex-wrap items-center justify-between gap-2 text-sm p-3 rounded-xl bg-slate-50"><b>${tgl(d)}</b><span>Masuk ${e.masuk ? jam(e.masuk.waktu) : '-'} ${e.masuk ? badge(e.masuk.status) : ''}${e.masuk && e.masuk.telat_menit ? ` <span class="text-xs text-amber-700">(+${e.masuk.telat_menit} mnt)</span>` : ''} · Pulang ${e.pulang ? jam(e.pulang.waktu) : '-'}</span></div>`; }).join('') || '<div class="text-sm text-slate-400">Belum ada presensi.</div>'}</div>
+                        <div class="${CARD} flex flex-wrap items-center justify-between gap-3">
+                            <div><h4 class="font-bold text-slate-900">Rekap Presensi</h4><p class="text-sm text-slate-500">Lihat kehadiran Anda per bulan di menu Rekap Presensi.</p></div>
+                            <button onclick="window.app.navigate('rekap-saya')" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm">Buka Rekap Presensi</button>
                         </div></div>`;
                     if(window.FACE && FACE.enabled()) FACE.renderPanel(document.getElementById('fa-panel'), { sid: x.sid, nama: x.nama });
                 } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
@@ -584,8 +585,9 @@
                 const btn = document.getElementById('iz-btn'); btn.disabled = true;
                 try {
                     const x = ctxCache || await ctx();
-                    const bukti = await upload('bukti-izin', x.sid, document.getElementById('iz-bukti').files[0], 'izin');
-                    const { error } = await sbClient.rpc('ajukan_izin', { p_tanggal: document.getElementById('iz-tgl').value, p_jenis: document.getElementById('iz-jenis').value, p_alasan: document.getElementById('iz-alasan').value, p_bukti_path: bukti });
+                    const bukti = document.getElementById('iz-bukti').value.trim();
+                    if(bukti && !/^https?:\/\/\S+$/i.test(bukti)) throw new Error('Link dokumen harus diawali http:// atau https:// dan tanpa spasi.');
+                    const { error } = await sbClient.rpc('ajukan_izin', { p_tanggal: document.getElementById('iz-tgl').value, p_jenis: document.getElementById('iz-jenis').value, p_alasan: document.getElementById('iz-alasan').value, p_bukti_path: bukti || null });
                     if(error) throw new Error(friendlyError(error));
                     toast('Pengajuan terkirim. Menunggu persetujuan guru pembimbing.');
                     presensi();
@@ -739,6 +741,7 @@
                 } catch(err) { box.innerHTML = ''; }
             }
             async function bukti(path) {
+                if(/^https?:\/\//i.test(path || '')) { window.open(path, '_blank', 'noopener'); return; }
                 const { data, error } = await sbClient.storage.from('bukti-izin').createSignedUrl(path, 300);
                 if(error || !data) return toast('Bukti tidak dapat dibuka: ' + (error ? error.message : ''), 'error');
                 window.open(data.signedUrl, '_blank', 'noopener');
@@ -840,7 +843,53 @@
                     jurnalLoad();
                 } catch(err) { toast(err.message, 'error'); }
             }
-            return { rekap, rekapLoad, pilih, izinPutus, bukti, jurnal, jurnalLoad, verif, _dayStatus: dayStatus, _setR: o => Object.assign(R, o) };
+            /* ---- Rekap presensi milik siswa sendiri (per bulan) ---- */
+            const VLAB = { VERIFIED: ['Wajah terverifikasi', 'text-emerald-700'], PENDING_REVIEW: ['Menunggu tinjauan guru', 'text-amber-700'], REJECTED: ['Ditolak guru', 'text-rose-700'] };
+            async function rekapSaya(c) {
+                c = c || document.getElementById('main-content');
+                c.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const sis = await q(sbClient.from('siswa').select('id,nama').limit(1));
+                    if(!sis[0]) throw new Error('Data siswa untuk akun ini tidak ditemukan.');
+                    const [pen, ind] = await Promise.all([
+                        q(sbClient.from('penempatan').select('siswa_id,industri_id,tgl_mulai,tgl_selesai,status').eq('siswa_id', sis[0].id).neq('status', 'dibatalkan')),
+                        q(sbClient.from('industri').select('id,nama,hari_kerja').limit(50))]);
+                    R.pen = pen; R.ind = Object.fromEntries(ind.map(i => [i.id, i])); R.names = { [sis[0].id]: sis[0] }; R.saya = sis[0].id;
+                    c.innerHTML = `<div class="space-y-4"><div class="${CARD} flex flex-wrap gap-3 items-end">
+                        <div><label class="${LBL}">Bulan</label><input id="rs-bln" type="month" value="${T0().slice(0, 7)}" onchange="STAFF4.rekapSayaLoad()" class="${INP}"></div>
+                        <p class="text-xs text-slate-500 flex-1 min-w-[200px]">Rekap kehadiran PKL Anda. Hari yang belum berlalu belum diberi status.</p></div><div id="rs-hasil"></div></div>`;
+                    rekapSayaLoad();
+                } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            async function rekapSayaLoad() {
+                const out = document.getElementById('rs-hasil'); if(!out) return;
+                const ym = document.getElementById('rs-bln').value, sid = R.saya;
+                if(!ym) { out.innerHTML = ''; return; }
+                out.innerHTML = '<div class="text-sm text-slate-500 p-4">Memuat...</div>';
+                try {
+                    const mr = mRange(ym), today = T0();
+                    const days = Array.from({ length: mr.last }, (_, i) => `${mr.y}-${pad(mr.m)}-${pad(i + 1)}`);
+                    const [pr, iz] = await Promise.all([
+                        q(sbClient.from('presensi').select('siswa_id,tanggal,jenis,waktu,status,verification_status').eq('siswa_id', sid).gte('tanggal', mr.first).lte('tanggal', mr.end).order('tanggal').limit(500)),
+                        q(sbClient.from('pengajuan_izin').select('siswa_id,tanggal,jenis,status').eq('siswa_id', sid).gte('tanggal', mr.first).lte('tanggal', mr.end).order('tanggal').limit(200))]);
+                    const pres = {}, izin = {}, ver = {};
+                    pr.forEach(r => {
+                        const k = r.siswa_id + '|' + r.tanggal;
+                        if(r.verification_status) { const v = ver[r.tanggal] || (ver[r.tanggal] = []); v.push(r.verification_status); }
+                        if(r.verification_status !== 'REJECTED') (pres[k] = pres[k] || {})[r.jenis] = r;
+                    });
+                    iz.filter(z => z.status !== 'ditolak').forEach(z => { izin[z.siswa_id + '|' + z.tanggal] = z; });
+                    const r = calc(sid, days, today, pres, izin);
+                    const sum = ['H', 'T', 'I', 'S', 'A', 'TAP'].map(k => `<span class="inline-flex items-center gap-1 mr-2">${chip(k)}<b>${r.sum[k]}</b></span>`).join('');
+                    const verTxt = d => { const v = ver[d]; if(!v) return ''; const key = v.includes('REJECTED') ? 'REJECTED' : v.includes('PENDING_REVIEW') ? 'PENDING_REVIEW' : 'VERIFIED'; return `<span class="text-xs ${VLAB[key][1]}">${VLAB[key][0]}</span>`; };
+                    out.innerHTML = `<div class="${CARD}"><div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-900">Rekap Presensi Bulan ${mr.m}/${mr.y}</h4><div class="text-sm">${sum}</div></div>
+                        <div class="overflow-x-auto"><table class="w-full text-sm text-center"><thead><tr class="bg-slate-50 text-slate-500 font-semibold"><th class="p-3 text-left">Tanggal</th><th class="p-3">Masuk</th><th class="p-3">Pulang</th><th class="p-3">Status</th><th class="p-3">Verifikasi</th></tr></thead><tbody>
+                        ${r.rows.map(x => `<tr class="border-b border-slate-100 ${x.k === 'OFF' ? 'bg-slate-50' : ''}"><td class="p-3 text-left">${dmy(x.d)}</td><td class="p-3">${x.pr && x.pr.masuk ? jam(x.pr.masuk.waktu) : '-'}</td><td class="p-3">${x.pr && x.pr.pulang ? jam(x.pr.pulang.waktu) : '-'}</td><td class="p-3">${chip(x.k)}</td><td class="p-3">${verTxt(x.d)}</td></tr>`).join('')}
+                        </tbody></table></div>
+                        <p class="text-xs text-slate-400 mt-3">H hadir · T terlambat · I izin · S sakit · A alpa · TAP tidak presensi pulang · OFF bukan hari kerja</p></div>`;
+                } catch(err) { out.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
+            }
+            return { rekapSaya, rekapSayaLoad, rekap, rekapLoad, pilih, izinPutus, bukti, jurnal, jurnalLoad, verif, _dayStatus: dayStatus, _setR: o => Object.assign(R, o) };
         })();
         window.STAFF4 = STAFF4;
 
@@ -1516,6 +1565,7 @@
                     'visitasi': 'Monitoring & Visitasi Industri',
                     'penilaian': 'Penilaian Nilai PKL Industri',
                     'presensi-siswa': 'Presensi Masuk & Pulang GPS',
+                    'rekap-saya': 'Rekap Presensi Saya',
                     'jurnal-siswa': 'Input Jurnal Kegiatan Harian',
                     'usulan-industri': 'Usulan Industri dari Siswa',
                     'usulan-saya': 'Usulan Tempat PKL'
@@ -1533,6 +1583,7 @@
                 else if(view === 'jurnal') STAFF4.jurnal(main);
                 else if(view === 'visitasi') VISIT4.visitasi(main);
                 else if(view === 'penilaian') NILAI4.penilaian(main);
+                else if(view === 'rekap-saya') STAFF4.rekapSaya(main);
                 else if(view === 'presensi-siswa') this.views.renderPresensiSiswa(main);
                 else if(view === 'jurnal-siswa') this.views.renderJurnalSiswa(main);
 
@@ -2354,10 +2405,18 @@
                 container.innerHTML = cardLoading;
                 try {
                     const [pen, usulan] = await Promise.all([
-                        q(sbClient.from('penempatan').select('status, tgl_mulai, tgl_selesai, industri(nama, alamat, kota), guru(nama), tahun_pelajaran(nama)').neq('status', 'dibatalkan').order('tgl_mulai', { ascending: false }).limit(1)),
+                        q(sbClient.from('penempatan').select('status, tgl_mulai, tgl_selesai, industri_id, industri(nama, alamat, kota, hp, pembimbing), guru(nama, hp, email), tahun_pelajaran(nama)').neq('status', 'dibatalkan').order('tgl_mulai', { ascending: false }).limit(1)),
                         q(sbClient.from('usulan_industri').select('id, nama_industri, kota, status, alasan_penolakan, created_at').order('created_at', { ascending: false }))
                     ]);
                     const p = pen[0];
+                    let pl = null;   // pembimbing lapangan; bila tidak terbaca, kartu tetap tampil tanpa bagian ini
+                    if(p && p.industri_id) { try { pl = (await q(sbClient.from('pembimbing_lapangan').select('nama, jabatan, hp, email').eq('industri_id', p.industri_id).limit(1)))[0] || null; } catch(_) {} }
+                    const kontak = (judul, nama, sub, hp, email, kosong) => `<div class="rounded-xl bg-white border border-emerald-100 p-3">
+                        <p class="text-xs font-semibold text-emerald-800 uppercase mb-1">${judul}</p>
+                        ${nama ? `<p class="font-semibold text-slate-800">${esc(nama)}</p>${sub ? `<p class="text-xs text-slate-500">${esc(sub)}</p>` : ''}
+                            <div class="mt-1 text-sm">${hp ? window.app.formatWA(hp) : '<span class="text-slate-400">No. HP belum tersedia</span>'}</div>
+                            ${email ? `<a href="mailto:${esc(email)}" class="text-xs text-indigo-600 underline break-all">${esc(email)}</a>` : ''}`
+                            : `<p class="text-sm text-amber-700">${kosong}</p>`}</div>`;
                     const langkah = p ? 4 : usulan.some(u => u.status === 'diproses') ? 3 : usulan.some(u => u.status === 'diusulkan') ? 2 : 1;
                     const steps = ['Usulkan tempat PKL', 'Diproses sekolah', 'Jawaban industri', 'Penempatan'];
                     const stepHtml = steps.map((t, i) => {
@@ -2369,7 +2428,11 @@
                         ? `<div class="rounded-xl bg-emerald-50 border border-emerald-100 p-4 text-sm">
                                <p class="font-semibold text-emerald-800 mb-1">Anda sudah ditempatkan</p>
                                <p><b>${esc(p.industri ? p.industri.nama : '-')}</b><br><span class="text-slate-600">${esc(p.industri ? [p.industri.alamat, p.industri.kota].filter(Boolean).join(', ') : '')}</span></p>
-                               <p class="mt-2 text-slate-600">Periode: ${fmtDate(p.tgl_mulai)} s.d ${fmtDate(p.tgl_selesai)}<br>Guru pembimbing: ${p.guru ? esc(p.guru.nama) : '<span class="text-amber-700">belum ditetapkan, menunggu penetapan dari sekolah</span>'}</p></div>`
+                               <p class="mt-2 text-slate-600">Periode: ${fmtDate(p.tgl_mulai)} s.d ${fmtDate(p.tgl_selesai)}<br>Guru pembimbing: ${p.guru ? esc(p.guru.nama) : '<span class="text-amber-700">belum ditetapkan, menunggu penetapan dari sekolah</span>'}</p>
+                               <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                   ${kontak('Guru pembimbing', p.guru && p.guru.nama, '', p.guru && p.guru.hp, p.guru && p.guru.email, 'Belum ditetapkan, menunggu penetapan dari sekolah.')}
+                                   ${kontak('Pembimbing lapangan', pl ? pl.nama : (p.industri && p.industri.pembimbing), pl ? pl.jabatan : (p.industri && p.industri.nama), pl ? pl.hp : (p.industri && p.industri.hp), pl && pl.email, 'Kontak industri belum diisi.')}
+                               </div></div>`
                         : (usulan.length
                             ? `<div class="space-y-2">${usulan.slice(0, 3).map(x => `<div class="rounded-xl border border-slate-100 p-3 text-sm"><div class="flex flex-wrap items-center justify-between gap-2"><b>${esc(x.nama_industri)}</b>${usulanChip(x.status)}</div>${x.alasan_penolakan ? `<p class="text-xs text-rose-600 mt-1">Alasan: ${esc(x.alasan_penolakan)}</p>` : ''}</div>`).join('')}</div>`
                             : '<p class="text-sm text-slate-600">Anda belum mengusulkan tempat PKL. Usulkan industri yang ingin Anda tuju agar sekolah dapat memprosesnya.</p>');
