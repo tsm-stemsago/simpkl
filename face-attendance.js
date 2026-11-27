@@ -360,6 +360,7 @@
     async function presensi(jenis, ctx, opt) {
         opt = opt || {};
         if (!CFG.ENABLED) return { disabled: true };
+        if (opt.forceManual) S.fail = 0;   // kiriman manual untuk ditinjau guru: mulai hitungan gagal dari awal
         const sid = ctx.siswa.id, nama = ctx.siswa.nama;
         S.sid = sid; S.nama = nama;
         const ui = openUI('Presensi ' + (jenis === 'masuk' ? 'Masuk' : 'Pulang'));
