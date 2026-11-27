@@ -15,7 +15,7 @@
         ENABLED: true,
         APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwEniW0Q2oPdMrLpPzu2L55t44y8HXcIgClsdZtGkguKKdIgwrNZvssq2VjMSWrus_-/exec',
         // Samakan dengan Script Property SECRET_TOKEN di Apps Script (token ini terlihat di front-end; keamanan sebenarnya ada pada pemeriksaan jwt Supabase di Code.gs)
-        GAS_TOKEN: '3305031112930004',
+        GAS_TOKEN: 'xgbwdECViH16W893FVDTBsN-gA1AUbff0nTerMTrlcQ',
         LIB_URL: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js',
         MODEL_URL: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/',
         LOAD_TIMEOUT_MS: 8000,        // batas tunggu pustaka + model, lewat dari ini masuk mode cadangan
