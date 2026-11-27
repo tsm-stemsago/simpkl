@@ -226,7 +226,7 @@
     <!-- MODALS CONTAINER -->
     <div id="modals-container"></div>
 
-    <script src="face-attendance.js?v=1"></script>
+    <script src="face-attendance.js?v=2"></script>
     <script>
         const SUPABASE_URL = "https://ttxkwperndmpxfvhlnoe.supabase.co";
         const SUPABASE_KEY = "sb_publishable_QG42NumYrIexUqfIHsTIwg_WSHqb5xD";
@@ -404,8 +404,6 @@
                 if(!res.data || res.data.length === 0) throw new Error('Tidak ada data yang terhapus (tidak ada izin atau data tidak ditemukan).');
                 window.app.ui.showToast('Berhasil dihapus!');
                 if(reloadKey) window.app.list.reload(reloadKey);
-                else if(table === 'visitasi') window.app.db.loadVisitasi();
-                else if(table === 'penilaian') window.app.db.loadPenilaian();
             } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
         }
 
@@ -808,7 +806,7 @@
                     c.innerHTML = `<div class="space-y-4"><div class="${CARD} flex flex-wrap gap-3 items-end">
                         <div><label class="${LBL}">Bulan</label><input id="jv-bln" type="month" onchange="STAFF4.jurnalLoad()" class="${INP}"></div>
                         <div class="flex-1 min-w-[200px]"><label class="${LBL}">Siswa</label><select id="jv-sis" onchange="STAFF4.jurnalLoad()" class="${INP} w-full">${opts('')}</select></div>
-                        <div><label class="${LBL}">Status</label><select id="jv-st" onchange="STAFF4.jurnalLoad()" class="${INP}"><option value="perlu">Perlu ditinjau</option><option value="revision">Perlu revisi</option><option value="approved">Disetujui</option><option value="semua">Semua (tanpa draft)</option></select></div>
+                        <div><label class="${LBL}">Status</label><select id="jv-st" onchange="STAFF4.jurnalLoad()" class="${INP}"><option value="perlu" ${canAct() ? 'selected' : ''}>Perlu ditinjau</option><option value="revision">Perlu revisi</option><option value="approved">Disetujui</option><option value="semua" ${canAct() ? '' : 'selected'}>Semua (tanpa draft)</option></select></div>
                         </div><div id="jv-hasil"></div></div>`;
                     jurnalLoad();
                 } catch(err) { c.innerHTML = `<div class="${CARD} text-sm text-rose-700">Gagal memuat: ${esc(err.message)}</div>`; }
@@ -1561,7 +1559,7 @@
                     'surat-arsip': 'Arsip Surat Keluar',
                     'surat-pengaturan': 'Pengaturan Surat',
                     'presensi': 'Rekap Presensi Harian',
-                    'jurnal': 'Verifikasi Jurnal Kegiatan',
+                    'jurnal': this.currentRole === 'pembimbing_lapangan' ? 'Jurnal Kegiatan Siswa' : 'Verifikasi Jurnal Kegiatan',
                     'visitasi': 'Monitoring & Visitasi Industri',
                     'penilaian': 'Penilaian Nilai PKL Industri',
                     'presensi-siswa': 'Presensi Masuk & Pulang GPS',
@@ -2129,72 +2127,6 @@
                     window.app.db.loadDashboardStats();
                 },
 
-                renderPresensi: function(container) {
-                    container.innerHTML = `
-                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="p-6 border-b border-slate-100"><h3 class="font-bold text-slate-900">Rekap Presensi Harian Siswa</h3></div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse text-sm">
-                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Waktu</th><th class="p-4">Siswa</th><th class="p-4">Jenis</th><th class="p-4">Status GPS</th></tr></thead>
-                                    <tbody id="tbody-presensi"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.loadPresensi();
-                },
-
-                renderJurnal: function(container) {
-                    container.innerHTML = `
-                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="p-6 border-b border-slate-100"><h3 class="font-bold text-slate-900">Verifikasi Jurnal Kegiatan Siswa</h3></div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse text-sm">
-                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Tanggal</th><th class="p-4">Siswa</th><th class="p-4">Uraian</th><th class="p-4">Status</th><th class="p-4">Aksi</th></tr></thead>
-                                    <tbody id="tbody-jurnal-verif"><tr><td colspan="5" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.loadJurnalVerif();
-                },
-
-                renderVisitasi: function(container) {
-                    container.innerHTML = `
-                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
-                                <h3 class="font-bold text-slate-900">Monitoring & Visitasi Industri</h3>
-                                <button onclick="window.app.db.openModalVisitasi()" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Tambah Visitasi</button>
-                            </div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse text-sm">
-                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Tanggal & Guru</th><th class="p-4">Industri</th><th class="p-4">Catatan</th><th class="p-4">Aksi</th></tr></thead>
-                                    <tbody id="tbody-visitasi"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.loadVisitasi();
-                },
-
-                renderPenilaian: function(container) {
-                    container.innerHTML = `
-                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
-                                <h3 class="font-bold text-slate-900">Penilaian Nilai PKL dari Industri</h3>
-                                <button onclick="window.app.db.openModalNilai()" class="px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Input Nilai</button>
-                            </div>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse text-sm">
-                                    <thead><tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><th class="p-4">Siswa & Industri</th><th class="p-4">Komponen Nilai</th><th class="p-4">Akhir & Predikat</th><th class="p-4">Aksi</th></tr></thead>
-                                    <tbody id="tbody-penilaian"><tr><td colspan="4" class="p-6 text-center text-slate-400">Memuat data...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                    window.app.db.loadPenilaian();
-                },
-
                 renderPresensiSiswa: function(container) { SISWA4.presensi(container); },
 
                 renderJurnalSiswa: function(container) { SISWA4.jurnal(container); },
@@ -2216,171 +2148,6 @@
                         set('stat-guru', gur.error ? '-' : (gur.count || 0));
                         set('stat-pen', pen.error ? '-' : (pen.count || 0));
                     } catch(e) { console.error(e); }
-                },
-
-                failRow: function(tbody, cols, err) {
-                    tbody.innerHTML = `<tr><td colspan="${cols}" class="p-6 text-center text-rose-600">Gagal memuat data: ${esc(err.message)}</td></tr>`;
-                },
-
-                loadPresensi: async function() {
-                    const tbody = document.getElementById('tbody-presensi');
-                    if(!tbody) return;
-                    try {
-                        const data = await q(sbClient.from('presensi').select('*'));
-                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
-                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4 text-xs">${esc(new Date(d.waktu).toLocaleString())}</td><td class="p-4">${esc(d.siswa_id)}</td><td class="p-4">${esc(d.jenis)}</td><td class="p-4 text-xs text-emerald-600">${esc(d.status_otomatis || 'Valid')}</td></tr>`).join('');
-                    } catch(err) { this.failRow(tbody, 4, err); }
-                },
-
-                loadJurnalVerif: async function() {
-                    const tbody = document.getElementById('tbody-jurnal-verif');
-                    if(!tbody) return;
-                    try {
-                        const data = await q(sbClient.from('jurnal').select('*'));
-                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
-                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4 text-xs">${esc(d.tanggal)}</td><td class="p-4">${esc(d.siswa_id)}</td><td class="p-4 text-xs">${esc(d.uraian)}</td><td class="p-4">${esc(d.status)}</td><td class="p-4"><button onclick="window.app.db.updateJurnalStatus('${esc(d.id)}','Approved')" class="px-3 py-1 bg-emerald-600 text-white rounded text-xs">Setujui</button></td></tr>`).join('');
-                    } catch(err) { this.failRow(tbody, 5, err); }
-                },
-                updateJurnalStatus: async function(id, status) {
-                    try {
-                        await writeRow('jurnal', id, { status: status });
-                        window.app.ui.showToast('Status jurnal diperbarui!');
-                        this.loadJurnalVerif();
-                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
-                },
-
-                loadVisitasi: async function() {
-                    const tbody = document.getElementById('tbody-visitasi');
-                    if(!tbody) return;
-                    try {
-                        const data = await q(sbClient.from('visitasi').select('*'));
-                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
-                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4">${esc(d.tanggal)}<br><span class="text-xs">${esc(d.nama_guru)}</span></td><td class="p-4">${esc(d.nama_industri)}</td><td class="p-4 text-xs">${esc(d.catatan)}</td><td class="p-4"><button onclick="removeRow('visitasi','${esc(d.id)}','')" class="px-3 py-1 bg-rose-50 text-rose-700 rounded text-xs">Hapus</button></td></tr>`).join('');
-                    } catch(err) { this.failRow(tbody, 4, err); }
-                },
-                openModalVisitasi: async function() {
-                    const ind = document.getElementById('vis-industri');
-                    ind.innerHTML = '<option value="">Pilih Industri</option>';
-                    try {
-                        const rows = await q(sbClient.from('industri').select('id, nama').order('nama'));
-                        rows.forEach(i => ind.innerHTML += `<option value="${esc(i.id)}" data-name="${esc(i.nama)}">${esc(i.nama)}</option>`);
-                    } catch(err) { window.app.ui.showToast('Gagal memuat industri: ' + err.message, 'error'); }
-                    window.app.ui.openModal('modal-visitasi-container');
-                },
-                saveVisitasi: async function(e) {
-                    e.preventDefault();
-                    const ind = document.getElementById('vis-industri');
-                    const payload = {
-                        guru_id: window.app.currentUser.id,
-                        nama_guru: window.app.currentUser.nama,
-                        industri_id: ind.value,
-                        nama_industri: ind.selectedIndex > 0 ? ind.options[ind.selectedIndex].getAttribute('data-name') : '-',
-                        tanggal: document.getElementById('vis-tgl').value,
-                        catatan: document.getElementById('vis-catatan').value
-                    };
-                    try {
-                        await writeRow('visitasi', null, payload);
-                        window.app.ui.closeModal('modal-visitasi-container');
-                        window.app.ui.showToast('Visitasi disimpan!');
-                        this.loadVisitasi();
-                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
-                },
-
-                loadPenilaian: async function() {
-                    const tbody = document.getElementById('tbody-penilaian');
-                    if(!tbody) return;
-                    try {
-                        const data = await q(sbClient.from('penilaian').select('*'));
-                        if(data.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-slate-400">Belum ada data.</td></tr>'; return; }
-                        tbody.innerHTML = data.map(d => `<tr class="border-b border-slate-100"><td class="p-4"><strong>${esc(d.nama_siswa)}</strong><br><span class="text-xs">${esc(d.nama_industri)}</span></td><td class="p-4 text-xs">Disiplin: ${esc(d.nilai_disiplin)}, Teknis: ${esc(d.nilai_teknis)}</td><td class="p-4"><strong>${esc(d.nilai_akhir)}</strong></td><td class="p-4"><button onclick="removeRow('penilaian','${esc(d.id)}','')" class="px-3 py-1 bg-rose-50 text-rose-700 rounded text-xs">Hapus</button></td></tr>`).join('');
-                    } catch(err) { this.failRow(tbody, 4, err); }
-                },
-                openModalNilai: async function() {
-                    const s = document.getElementById('nil-siswa');
-                    s.innerHTML = '<option value="">Pilih Siswa</option>';
-                    try {
-                        const rows = await q(sbClient.from('penempatan').select('siswa_id, siswa(nama), industri(nama)').eq('status', 'aktif'));
-                        rows.forEach(p => {
-                            const sn = p.siswa ? p.siswa.nama : '-', inn = p.industri ? p.industri.nama : '-';
-                            s.innerHTML += `<option value="${esc(p.siswa_id)}" data-name="${esc(sn)}" data-ind="${esc(inn)}">${esc(sn)} (${esc(inn)})</option>`;
-                        });
-                    } catch(err) { window.app.ui.showToast('Gagal memuat siswa: ' + err.message, 'error'); }
-                    window.app.ui.openModal('modal-nilai-container');
-                },
-                saveNilai: async function(e) {
-                    e.preventDefault();
-                    const s = document.getElementById('nil-siswa');
-                    const d = parseFloat(document.getElementById('nil-disiplin').value) || 0;
-                    const t = parseFloat(document.getElementById('nil-teknis').value) || 0;
-                    const k = parseFloat(document.getElementById('nil-kerjasama').value) || 0;
-                    const i = parseFloat(document.getElementById('nil-inisiatif').value) || 0;
-                    const akhir = ((d + t + k + i) / 4).toFixed(2);
-                    const payload = {
-                        siswa_id: s.value,
-                        nama_siswa: s.selectedIndex > 0 ? s.options[s.selectedIndex].getAttribute('data-name') : '-',
-                        nama_industri: s.selectedIndex > 0 ? s.options[s.selectedIndex].getAttribute('data-ind') : '-',
-                        nilai_disiplin: d,
-                        nilai_teknis: t,
-                        nilai_kerjasama: k,
-                        nilai_inisiatif: i,
-                        nilai_akhir: parseFloat(akhir)
-                    };
-                    try {
-                        await writeRow('penilaian', null, payload);
-                        window.app.ui.closeModal('modal-nilai-container');
-                        window.app.ui.showToast('Nilai disimpan!');
-                        this.loadPenilaian();
-                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
-                },
-
-                initGPSCheck: function() {
-                    const box = document.getElementById('gps-status-box');
-                    if(navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(pos => {
-                            box.innerHTML = `<strong class="text-emerald-700">GPS Aktif:</strong> Lat: ${pos.coords.latitude.toFixed(5)}, Lng: ${pos.coords.longitude.toFixed(5)}`;
-                        }, err => { box.innerHTML = `<strong class="text-rose-700">GPS Error:</strong> ${esc(err.message)}`; });
-                    }
-                },
-                submitPresensi: async function(jenis) {
-                    const payload = {
-                        siswa_id: window.app.currentUser.nis || window.app.currentUser.nama,
-                        penempatan_id: 'default-pen',
-                        tanggal: new Date().toISOString().split('T')[0],
-                        waktu: new Date().toISOString(),
-                        jenis: jenis,
-                        status_otomatis: 'Valid GPS'
-                    };
-                    try {
-                        await writeRow('presensi', null, payload);
-                        window.app.ui.showToast(`Presensi ${jenis} berhasil!`);
-                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
-                },
-
-                loadJurnalSiswa: async function() {
-                    const wrap = document.getElementById('riwayat-jurnal-siswa');
-                    if(!wrap) return;
-                    try {
-                        const data = await q(sbClient.from('jurnal').select('*').eq('siswa_id', window.app.currentUser.nis || window.app.currentUser.nama));
-                        if(data.length === 0) { wrap.innerHTML = '<p class="text-sm text-slate-400">Belum ada jurnal.</p>'; return; }
-                        wrap.innerHTML = data.map(d => `<div class="p-4 bg-slate-50 rounded-xl text-sm"><div class="flex justify-between"><strong>${esc(d.tanggal)}</strong><span>${esc(d.status)}</span></div><p>${esc(d.uraian)}</p></div>`).join('');
-                    } catch(err) { wrap.innerHTML = `<p class="text-sm text-rose-600">Gagal memuat riwayat: ${esc(err.message)}</p>`; }
-                },
-                saveJurnalSiswa: async function(e) {
-                    e.preventDefault();
-                    const payload = {
-                        siswa_id: window.app.currentUser.nis || window.app.currentUser.nama,
-                        penempatan_id: 'default-pen',
-                        tanggal: document.getElementById('j-tgl').value,
-                        jam_mulai: document.getElementById('j-mulai').value,
-                        jam_selesai: document.getElementById('j-selesai').value,
-                        uraian: document.getElementById('j-uraian').value,
-                        status: 'Submitted'
-                    };
-                    try {
-                        await writeRow('jurnal', null, payload);
-                        window.app.ui.showToast('Jurnal terkirim!');
-                        this.loadJurnalSiswa();
-                    } catch(err) { window.app.ui.showToast('Gagal: ' + err.message, 'error'); }
                 }
             }
         };
@@ -4321,31 +4088,6 @@
                     </div>
                     <div><label class="${LBL}">Status</label><select id="pen-status" class="${INP}"><option value="aktif">Aktif</option><option value="selesai">Selesai</option><option value="dibatalkan">Dibatalkan</option></select></div>
                     ${FOOT('modal-penempatan-container')}
-                </form>`),
-
-            // Modal visitasi dan nilai: dipertahankan, disempurnakan di Tahap 4
-            WRAP('modal-visitasi-container', 'max-w-lg', `
-                <h3 class="font-bold text-lg text-slate-900 mb-4">Form Visitasi</h3>
-                <form onsubmit="window.app.db.saveVisitasi(event)" class="space-y-4">
-                    <div><label class="${LBL}">Industri</label><select id="vis-industri" required class="${INP}"></select></div>
-                    <div><label class="${LBL}">Tanggal</label><input type="date" id="vis-tgl" required class="${INP}"></div>
-                    <div><label class="${LBL}">Catatan</label><textarea id="vis-catatan" rows="3" required class="${INP}"></textarea></div>
-                    ${FOOT('modal-visitasi-container')}
-                </form>`),
-
-            WRAP('modal-nilai-container', 'max-w-lg', `
-                <h3 class="font-bold text-lg text-slate-900 mb-4">Form Nilai Industri</h3>
-                <form onsubmit="window.app.db.saveNilai(event)" class="space-y-4">
-                    <div><label class="${LBL}">Siswa</label><select id="nil-siswa" required class="${INP}"></select></div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="${LBL}">Disiplin (0-100)</label><input type="number" id="nil-disiplin" min="0" max="100" required class="${INP}"></div>
-                        <div><label class="${LBL}">Teknis (0-100)</label><input type="number" id="nil-teknis" min="0" max="100" required class="${INP}"></div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="${LBL}">Kerjasama (0-100)</label><input type="number" id="nil-kerjasama" min="0" max="100" required class="${INP}"></div>
-                        <div><label class="${LBL}">Inisiatif (0-100)</label><input type="number" id="nil-inisiatif" min="0" max="100" required class="${INP}"></div>
-                    </div>
-                    ${FOOT('modal-nilai-container')}
                 </form>`),
 
             WRAP('modal-surat-container', 'max-w-xl', `
