@@ -15,12 +15,11 @@
         ENABLED: true,
         APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwEniW0Q2oPdMrLpPzu2L55t44y8HXcIgClsdZtGkguKKdIgwrNZvssq2VjMSWrus_-/exec',
         // Samakan dengan Script Property SECRET_TOKEN di Apps Script (token ini terlihat di front-end; keamanan sebenarnya ada pada pemeriksaan jwt Supabase di Code.gs)
-        GAS_TOKEN: 'xgbwdECViH16W893FVDTBsN-gA1AUbff0nTerMTrlcQ',
+        GAS_TOKEN: '3305031112930004',
         LIB_URL: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js',
         MODEL_URL: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/',
         LOAD_TIMEOUT_MS: 8000,        // batas tunggu pustaka + model, lewat dari ini masuk mode cadangan
-        T_VERIFIED: 0.45,             // jarak < 0.45  -> VERIFIED (sama dengan presensi_catat_wajah)
-        T_REJECT: 0.60,               // 0.45 < jarak <= 0.60 -> PENDING_REVIEW; di atasnya ditolak
+        T_VERIFIED: 0.45,             // hanya untuk memeriksa konsistensi saat pendaftaran; ambang presensi (0.45 / 0.60) ditentukan SERVER
         MAX_FAIL: 3,                  // setelah 3 kali tidak cocok, siswa boleh mengirim untuk ditinjau guru
         ENROLL_SAMPLES: 3,            // contoh wajah saat pendaftaran; dirata-rata menjadi satu descriptor
         VERIFY_SAMPLES: 2,            // jumlah contoh wajah saat presensi
@@ -40,27 +39,34 @@
     const msgOf = (e) => (typeof friendlyError === 'function' ? friendlyError(e) : (e && e.message) || String(e));
 
     const API = {
-        // siswa_wajah.descriptor: satu larik 128 angka; RLS membatasi ke milik siswa sendiri
-        async getEnrollment(sid) {
-            const { data, error } = await sbClient.from('siswa_wajah').select('descriptor').eq('siswa_id', sid).maybeSingle();
+        // Descriptor wajah terdaftar TIDAK dapat dibaca dari browser; klien hanya boleh bertanya "sudah terdaftar atau belum"
+        async terdaftar() {
+            const { data, error } = await sbClient.rpc('wajah_terdaftar');
             if (error) throw new Error(msgOf(error));
-            return data && Array.isArray(data.descriptor) ? [new Float32Array(data.descriptor)] : [];
+            return data === true;
+        },
+        // Pra-cek sebelum foto diunggah: server hanya mengembalikan status (VERIFIED / PENDING_REVIEW / REJECTED), bukan angka jarak
+        async cek(live) {
+            const { data, error } = await sbClient.rpc('cek_wajah', { p_descriptors: live });
+            if (error) throw new Error(msgOf(error));
+            return data;
         },
         async daftar(descriptor) {
             const { error } = await sbClient.rpc('daftar_wajah', { p_descriptor: descriptor, p_setuju: true });
             if (error) throw new Error(msgOf(error));
         },
-        // Server menentukan status: < 0.45 VERIFIED, 0.45 sampai 0.60 PENDING_REVIEW, > 0.60 ditolak; p_model_gagal = PENDING_REVIEW
+        // Server menghitung jarak dari contoh wajah (p_descriptors) lalu menentukan status; p_model_gagal = PENDING_REVIEW tanpa pencocokan
+        // p_descriptors selalu dikirim (null bila model gagal) agar fungsi yang dipanggil tidak ambigu
         async catat(a) {
             const { data, error } = await sbClient.rpc('presensi_catat_wajah', {
                 p_jenis: a.jenis, p_lat: a.pos.latitude, p_lng: a.pos.longitude, p_akurasi: a.pos.accuracy,
-                p_photo_url: a.url, p_face_distance: a.score, p_model_gagal: a.modelGagal
+                p_photo_url: a.url, p_descriptors: a.live, p_model_gagal: a.modelGagal
             });
             if (error) throw new Error(msgOf(error));
             return data;
         },
         async hariIni(sid, tanggal) {
-            const { data, error } = await sbClient.from('presensi').select('jenis,verification_status,face_distance').eq('siswa_id', sid).eq('tanggal', tanggal);
+            const { data, error } = await sbClient.from('presensi').select('jenis,verification_status').eq('siswa_id', sid).eq('tanggal', tanggal);
             if (error) throw new Error(msgOf(error));
             return data || [];
         },
@@ -334,14 +340,7 @@
         });
     }
 
-    /* ================= 8. PENCOCOKAN ================= */
-    function evaluate(enrolled, live) {
-        // Per contoh langsung: jarak terdekat ke contoh terdaftar; hasil akhir = rata-rata
-        const per = live.map((d) => Math.min(...enrolled.map((e) => faceapi.euclideanDistance(d, e))));
-        const score = +(per.reduce((a, b) => a + b, 0) / per.length).toFixed(3);
-        const status = score < CFG.T_VERIFIED ? 'VERIFIED' : score <= CFG.T_REJECT ? 'PENDING_REVIEW' : 'REJECTED';
-        return { score, status };
-    }
+    /* ================= 8. PENCOCOKAN: dilakukan SERVER (cek_wajah dan presensi_catat_wajah) ================= */
 
     /* ================= 9. FOTO: KOMPRES + WATERMARK ================= */
     function makeJpeg(src, lines) {
@@ -369,43 +368,39 @@
             ui.sub('Jika model belum siap dalam 8 detik, foto dikirim untuk ditinjau guru.');
             const cam = startCamera(ui);
             const [models] = await Promise.all([opt.forceManual ? false : modelsReady(), cam]);
-            let enrolled = [];
-            if (models) {
-                enrolled = await API.getEnrollment(sid);
-                if (!enrolled.length) { ui.close(); return { needEnroll: true }; }
-            }
+            if (models && !(await API.terdaftar())) { ui.close(); return { needEnroll: true }; }
             ui.sub('');
             const res = await acquire(ui, { models, samples: CFG.VERIFY_SAMPLES });
             ui.lock(); ui.hideVideo(); ui.stopCamera();
 
-            let score = null;
             const modelGagal = !res.descriptors;   // model gagal dimuat, atau dikirim manual setelah tidak cocok
+            let live = null, perkiraan = 'PENDING_REVIEW';
             if (!modelGagal) {
-                const ev = evaluate(enrolled, res.descriptors);
-                score = +ev.score.toFixed(4);
-                if (ev.status === 'REJECTED') {
+                live = res.descriptors.map((d) => Array.from(d, (x) => +x.toFixed(6)));
+                ui.msg('Mencocokkan wajah…');
+                perkiraan = await API.cek(live);
+                if (perkiraan === 'REJECTED') {
                     S.fail++; ui.close();
                     if (S.fail >= CFG.MAX_FAIL && confirm('Wajah belum cocok ' + S.fail + ' kali. Kirim presensi ini untuk ditinjau guru pembimbing?')) {
                         return presensi(jenis, ctx, { forceManual: true });
                     }
-                    return { rejected: true, score: ev.score, fail: S.fail };
+                    return { rejected: true, fail: S.fail };
                 }
                 S.fail = 0;
             }
-            const perkiraan = modelGagal ? 'PENDING_REVIEW' : evaluate(enrolled, res.descriptors).status;
 
             ui.msg('Mengompres dan mengunggah foto…');
             const p = ctx.pos, waktu = new Date().toISOString(), lines = [
                 nama, stampWib(), ctx.industri && ctx.industri.nama,
                 `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)} (±${Math.round(p.accuracy)} m)`,
-                `PRESENSI ${jenis.toUpperCase()} · ${perkiraan}${score != null ? ' (' + score.toFixed(2) + ')' : ''}`
+                `PRESENSI ${jenis.toUpperCase()} · ${perkiraan}`
             ];
             const blob = await makeJpeg(res.frame, lines);
             const url = await uploadRetry(blob, { tipe: jenis, nis: ctx.siswa.nis, nama, waktu });
             ui.msg('Menyimpan presensi…');
-            const data = await API.catat({ jenis, pos: p, url, score, modelGagal });
+            const data = await API.catat({ jenis, pos: p, url, live, modelGagal });
             ui.close();
-            return { status: data.verification_status || perkiraan, score, modelGagal, data };
+            return { status: data.verification_status || perkiraan, modelGagal, data };
         } catch (e) {
             ui.close();
             if (e && e.cancel) return { cancelled: true };
@@ -432,7 +427,7 @@
     async function enroll() {
         if (!S.sid) return toast('Data siswa belum dimuat. Muat ulang halaman.', 'error');
         try {
-            if ((await API.getEnrollment(S.sid)).length) { toast('Wajah Anda sudah terdaftar. Untuk mendaftar ulang, hubungi guru pembimbing atau Pokja PKL.', 'error'); return refreshPanel(); }
+            if (await API.terdaftar()) { toast('Wajah Anda sudah terdaftar. Untuk mendaftar ulang, hubungi guru pembimbing atau Pokja PKL.', 'error'); return refreshPanel(); }
         } catch (e) { return toast('Gagal memeriksa pendaftaran: ' + e.message, 'error'); }
         if (!(await askConsent())) return;
         const ui = openUI('Pendaftaran Wajah');
@@ -472,8 +467,7 @@
         preload();
         const chip = document.getElementById('fa-chip'), act = document.getElementById('fa-act');
         try {
-            const enr = await API.getEnrollment(S.sid);
-            S.enrolled = enr.length > 0;
+            S.enrolled = await API.terdaftar();
             chip.textContent = S.enrolled ? 'Wajah terdaftar' : 'Belum terdaftar'; chip.dataset.t = S.enrolled ? 'ok' : 'warn';
             if (!S.enrolled) act.innerHTML = '<button type="button" class="fa-pbtn" onclick="FACE.enroll()">Daftarkan Wajah</button>';
             else act.innerHTML = '<div style="margin-top:6px;font-size:12px">Untuk mendaftar ulang wajah, hubungi guru pembimbing atau Pokja PKL.</div>';
@@ -531,6 +525,6 @@
     /* ================= 14. ANTARMUKA PUBLIK ================= */
     window.FACE = {
         CFG, enabled: () => CFG.ENABLED, preload, presensi, enroll, renderPanel, renderReview, review, resetWajah,
-        _t: { ear, yawOf, evaluate, median, safeName }
+        _t: { ear, yawOf, median, safeName }
     };
 })();
