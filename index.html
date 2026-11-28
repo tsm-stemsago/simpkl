@@ -226,7 +226,7 @@
     <!-- MODALS CONTAINER -->
     <div id="modals-container"></div>
 
-    <script src="face-attendance.js?v=2"></script>
+    <script src="face-attendance.js?v=3"></script>
     <script>
         const SUPABASE_URL = "https://ttxkwperndmpxfvhlnoe.supabase.co";
         const SUPABASE_KEY = "sb_publishable_QG42NumYrIexUqfIHsTIwg_WSHqb5xD";
@@ -559,7 +559,7 @@
                         const r = await FACE.presensi(jenis, { pos, siswa: { id: x.sid, nama: x.nama, nis: x.nis }, industri: x.ind });
                         if(r.cancelled) { presensi(); return; }
                         if(r.needEnroll) { toast('Daftarkan wajah Anda terlebih dahulu dengan tombol Daftarkan Wajah.', 'error'); presensi(); return; }
-                        if(r.rejected) { toast(`Wajah tidak cocok (jarak ${r.score}). Coba lagi dengan pencahayaan lebih baik.`, 'error'); presensi(); return; }
+                        if(r.rejected) { toast('Wajah tidak cocok. Coba lagi dengan pencahayaan lebih baik.', 'error'); presensi(); return; }
                         const ket = r.status === 'VERIFIED' ? 'wajah terverifikasi' : 'menunggu tinjauan guru';
                         toast(`Presensi ${jenis} tercatat (${r.data.jarak_m} m dari industri${r.data.telat_menit ? ', terlambat ' + r.data.telat_menit + ' menit' : ''}, ${ket}).`);
                         presensi();
